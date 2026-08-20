@@ -1,0 +1,1547 @@
+openapi: 3.0.3
+info:
+  title: BookingQube Cafe Menus & Booking API
+  description: |
+    Cafe catalog management (admin) and Cafe POS table booking/settlement.
+
+    **Admin menu flow:** login → create cafe → categories → subcategories → items → agents → assign event → publish
+
+    **Cafe POS flow:** POST /pos/cafe/auth/login → menu → promocodes/apply (optional) → tables → book → clear → report → daily closings
+
+    Admin APIs require Admin JWT + cafe.* permissions.
+    Cafe POS APIs require Bearer JWT from POST /pos/cafe/auth/login (typ cafe_pos_access).
+  version: 1.1.0
+
+servers:
+  - url: http://localhost:3002/api/v1
+    description: Local (.env)
+  - url: '{baseUrl}'
+    variables:
+      baseUrl:
+        default: http://localhost:3002/api/v1
+
+tags:
+  - name: 01 Admin Auth
+    description: Admin login for cafe menu management
+  - name: 02 Cafe Menus (Admin)
+    description: Cafe CRUD, menu tree, agents, event assignment
+  - name: 03 Cafe POS Auth
+    description: Dedicated cafe POS login (cafe_pos_access JWT)
+  - name: 04 Cafe POS Menu
+    description: List and create categories / subcategories / items
+  - name: 05 Cafe POS Tables & Orders
+    description: Tables, book lines, clear/settle
+  - name: 05a Cafe POS Instant Orders
+    description: Walk-up book + settle in one call (cash/card/split)
+  - name: 05b Cafe POS Promocodes
+    description: Preview / validate cafe promocodes before book
+  - name: 05c Cafe POS Customers
+    description: Search customers by name, email, or phone
+  - name: 06 Cafe POS Report
+    description: Agent-scoped cafe sales report
+  - name: 07 Cafe POS Daily Closings
+    description: Daily closings for cafe POS agent
+
+components:
+  securitySchemes:
+    AdminBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Admin JWT from POST /admin/auth/login
+    CafePosBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Cafe POS JWT from POST /pos/cafe/auth/login
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Legacy optional JWT (prefer CafePosBearerAuth)
+
+  schemas:
+    CafePosLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+        cafe_id:
+          type: string
+          format: uuid
+          description: Required when the agent is assigned to multiple cafes
+
+    AdminLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+
+    AdminLoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          additionalProperties: true
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        token:
+          type: string
+          description: Some responses may nest token under data
+
+    SuccessEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          additionalProperties: true
+        message:
+          type: string
+
+    CreateAdminCafeRequest:
+      type: object
+      required: [organization_id, name, table_count]
+      properties:
+        organization_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 160
+        details:
+          type: string
+          nullable: true
+        table_count:
+          type: integer
+          minimum: 1
+          maximum: 500
+        manager_user_id:
+          type: string
+          format: uuid
+          nullable: true
+
+    UpdateAdminCafeRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        details:
+          type: string
+          nullable: true
+        table_count:
+          type: integer
+          minimum: 1
+          maximum: 500
+        manager_user_id:
+          type: string
+          format: uuid
+          nullable: true
+
+    CafeStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [draft, published, archived]
+
+    UpsertMenuCategoryRequest:
+      type: object
+      required: [title_en]
+      properties:
+        title_en:
+          type: string
+        title_ar:
+          type: string
+          nullable: true
+        sort_order:
+          type: integer
+        status:
+          type: string
+          enum: [active, hidden, archived]
+        image_media_id:
+          type: string
+          format: uuid
+          nullable: true
+        thumbnail_data_url:
+          type: string
+        thumbnail_file_name:
+          type: string
+
+    UpsertMenuSubcategoryRequest:
+      $ref: '#/components/schemas/UpsertMenuCategoryRequest'
+
+    CafeMenuItemVariant:
+      type: object
+      required: [title_en, price]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title_en:
+          type: string
+        title_ar:
+          type: string
+          nullable: true
+        price:
+          type: number
+          minimum: 0
+        sort_order:
+          type: integer
+        status:
+          type: string
+          enum: [active, hidden, archived]
+
+    UpsertMenuItemRequest:
+      type: object
+      required: [title_en, price]
+      properties:
+        title_en:
+          type: string
+        title_ar:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        price:
+          type: number
+          minimum: 0
+        currency:
+          type: string
+          example: QAR
+        image_media_id:
+          type: string
+          format: uuid
+          nullable: true
+        thumbnail_data_url:
+          type: string
+        thumbnail_file_name:
+          type: string
+        is_kot:
+          type: boolean
+        sort_order:
+          type: integer
+        status:
+          type: string
+          enum: [active, hidden, archived]
+        variants:
+          type: array
+          maxItems: 40
+          items:
+            $ref: '#/components/schemas/CafeMenuItemVariant'
+          description: When set (including empty), replaces all variants. Omit to leave unchanged on update.
+
+    CreateCafePosAgentRequest:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          description: Attach existing user — omit when creating new
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        username:
+          type: string
+          pattern: '^[a-zA-Z0-9._-]+$'
+          minLength: 3
+          maxLength: 60
+
+    CafeAgentStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [active, suspended]
+
+    AssignCafeEventRequest:
+      type: object
+      required: [event_id]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+
+    CafePosContextResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            cafe:
+              type: object
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+                table_count:
+                  type: integer
+                status:
+                  type: string
+                organization_id:
+                  type: string
+            event:
+              type: object
+              nullable: true
+              properties:
+                id:
+                  type: string
+                slug:
+                  type: string
+                title:
+                  type: string
+            agent_id:
+              type: string
+
+    CafePosMenuResponse:
+      type: object
+      description: >
+        Each category exposes `items` for products with no named subcategory,
+        and `subcategories` only for real subcategory groups.
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            cafe_id:
+              type: string
+            categories:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+
+    CafePosTablesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            cafe_id:
+              type: string
+            event_id:
+              type: string
+            table_count:
+              type: integer
+            tables:
+              type: array
+              items:
+                type: object
+                properties:
+                  table:
+                    type: integer
+                  status:
+                    type: string
+                    enum: [FREE, OCCUPIED]
+                  orders:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+
+    BookCafeTableRequest:
+      type: object
+      required: [table_number, payment_type, items]
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+          description: Optional; must match token subject when provided
+        table_number:
+          type: integer
+          minimum: 1
+          maximum: 500
+        payment_type:
+          type: string
+          enum: [prepaid, postpaid]
+        promo_code:
+          type: string
+          maxLength: 40
+          description: Optional order-level promocode (order_total or per-item from admin config)
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [menu_item_id, quantity]
+            properties:
+              menu_item_id:
+                type: string
+                format: uuid
+              quantity:
+                type: integer
+                minimum: 1
+                maximum: 99
+        customer_name:
+          type: string
+          maxLength: 160
+        customer_email:
+          type: string
+          format: email
+
+    ClearCafeTableRequest:
+      type: object
+      required: [table_number, payment_mode]
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+          description: Optional; must match token subject when provided
+        table_number:
+          type: integer
+          minimum: 1
+          maximum: 500
+        payment_mode:
+          type: string
+          enum: [cash, card, split]
+        split_cash_amount:
+          type: number
+          minimum: 0
+        split_card_amount:
+          type: number
+          minimum: 0
+        customer_name:
+          type: string
+        customer_email:
+          type: string
+          format: email
+
+    ClearCafeTableResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+          example: Table settled successfully.
+        data:
+          type: object
+          properties:
+            common_order:
+              type: string
+            order_id:
+              type: string
+            table_number:
+              type: integer
+            subtotal:
+              type: number
+            discount_amount:
+              type: number
+            promo_code:
+              type: string
+              nullable: true
+            total_amount:
+              type: number
+            currency:
+              type: string
+
+paths:
+  # ── 01 Admin Auth ──────────────────────────────────────
+  /admin/auth/login:
+    post:
+      tags: [01 Admin Auth]
+      summary: Admin login
+      operationId: adminLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminLoginRequest'
+      responses:
+        '200':
+          description: Tokens issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminLoginResponse'
+
+  # ── 02 Cafe Menus (Admin) ──────────────────────────────
+  /admin/cafes:
+    get:
+      tags: [02 Cafe Menus (Admin)]
+      summary: List cafes
+      operationId: listCafes
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: organization_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, review, published, archived]
+        - name: q
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cafe list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+    post:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Create cafe
+      operationId: createCafe
+      security:
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAdminCafeRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '200':
+          description: Created (if controller returns 200)
+
+  /admin/cafes/{id}:
+    get:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Get cafe detail
+      operationId: getCafe
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Cafe with nested menu/agents
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+    put:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Update cafe
+      operationId: updateCafe
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAdminCafeRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /admin/cafes/{id}/status:
+    post:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Set cafe status (publish)
+      description: Requires cafe.publish
+      operationId: setCafeStatus
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CafeStatusRequest'
+      responses:
+        '200':
+          description: Status updated
+
+  /admin/cafes/{id}/menu/categories:
+    get:
+      tags: [02 Cafe Menus (Admin)]
+      summary: List menu categories
+      operationId: listCafeCategories
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Categories tree
+    post:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Create menu category
+      operationId: createCafeCategory
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertMenuCategoryRequest'
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /admin/cafes/{id}/menu/categories/{categoryId}:
+    put:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Update menu category
+      operationId: updateCafeCategory
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertMenuCategoryRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Delete menu category
+      operationId: deleteCafeCategory
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deleted
+
+  /admin/cafes/{id}/menu/categories/{categoryId}/subcategories:
+    post:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Create subcategory
+      operationId: createCafeSubcategory
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertMenuSubcategoryRequest'
+      responses:
+        '200':
+          description: Created
+
+  /admin/cafes/{id}/menu/categories/{categoryId}/subcategories/{subcategoryId}:
+    put:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Update subcategory
+      operationId: updateCafeSubcategory
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: subcategoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertMenuSubcategoryRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Delete subcategory
+      operationId: deleteCafeSubcategory
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: subcategoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deleted
+
+  /admin/cafes/{id}/menu/categories/{categoryId}/items:
+    post:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Create item under category (ungrouped)
+      operationId: createCafeItemUnderCategory
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertMenuItemRequest'
+      responses:
+        '200':
+          description: Created
+
+  /admin/cafes/{id}/menu/subcategories/{subcategoryId}/items:
+    post:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Create item under subcategory
+      operationId: createCafeItem
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: subcategoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertMenuItemRequest'
+      responses:
+        '200':
+          description: Created
+
+  /admin/cafes/{id}/menu/subcategories/{subcategoryId}/items/{itemId}:
+    put:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Update menu item
+      operationId: updateCafeItem
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: subcategoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertMenuItemRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Delete menu item
+      operationId: deleteCafeItem
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: subcategoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deleted
+
+  /admin/cafes/{id}/agents:
+    get:
+      tags: [02 Cafe Menus (Admin)]
+      summary: List cafe POS agents
+      operationId: listCafeAgents
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Agents
+    post:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Add cafe POS agent
+      operationId: addCafeAgent
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCafePosAgentRequest'
+      responses:
+        '200':
+          description: Agent added
+
+  /admin/cafes/{id}/agents/{agentId}/status:
+    post:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Update agent status
+      operationId: updateCafeAgentStatus
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: agentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CafeAgentStatusRequest'
+      responses:
+        '200':
+          description: Updated
+
+  /admin/cafes/{id}/agents/{agentId}:
+    delete:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Remove cafe POS agent
+      operationId: removeCafeAgent
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: agentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Removed
+
+  /admin/cafes/{id}/assign-event:
+    post:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Assign cafe to event
+      operationId: assignCafeEvent
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignCafeEventRequest'
+      responses:
+        '200':
+          description: Assigned
+
+  /admin/cafes/{id}/unassign-event:
+    post:
+      tags: [02 Cafe Menus (Admin)]
+      summary: Unassign cafe from event
+      operationId: unassignCafeEvent
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Unassigned
+
+  # ── Cafe POS ───────────────────────────────────────────
+  /pos/cafe/auth/login:
+    post:
+      tags: [03 Cafe POS Auth]
+      summary: Cafe POS login
+      operationId: cafePosLogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CafePosLoginRequest'
+      responses:
+        '200':
+          description: JWT token + cafe/event context
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /pos/cafe/me:
+    get:
+      tags: [03 Cafe POS Auth]
+      summary: Current cafe POS session
+      operationId: cafePosMe
+      security:
+        - CafePosBearerAuth: []
+      responses:
+        '200':
+          description: Agent + cafe + event
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /pos/cafe/context:
+    get:
+      tags: [04 Cafe POS Menu]
+      summary: Cafe POS context
+      operationId: cafePosContext
+      security:
+        - CafePosBearerAuth: []
+      responses:
+        '200':
+          description: Cafe + event + agent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CafePosContextResponse'
+
+  /pos/cafe/menu:
+    get:
+      tags: [04 Cafe POS Menu]
+      summary: Cafe POS menu
+      operationId: cafePosMenu
+      security:
+        - CafePosBearerAuth: []
+      responses:
+        '200':
+          description: Categories with direct items (no subcategory) plus named subcategories → items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CafePosMenuResponse'
+
+  /pos/cafe/menu/categories:
+    post:
+      tags: [04 Cafe POS Menu]
+      summary: Create menu category
+      operationId: cafePosCreateCategory
+      security:
+        - CafePosBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title_en]
+              properties:
+                title_en: { type: string }
+                title_ar: { type: string }
+                is_kot: { type: boolean }
+      responses:
+        '200':
+          description: Category created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /pos/cafe/menu/subcategories:
+    post:
+      tags: [04 Cafe POS Menu]
+      summary: Create menu subcategory
+      operationId: cafePosCreateSubcategory
+      security:
+        - CafePosBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category_id, title_en]
+              properties:
+                category_id: { type: string, format: uuid }
+                title_en: { type: string }
+                title_ar: { type: string }
+      responses:
+        '200':
+          description: Subcategory created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /pos/cafe/menu/items:
+    post:
+      tags: [04 Cafe POS Menu]
+      summary: Create menu item
+      operationId: cafePosCreateItem
+      security:
+        - CafePosBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category_id, title_en, price]
+              properties:
+                category_id: { type: string, format: uuid }
+                subcategory_id: { type: string, format: uuid }
+                title_en: { type: string }
+                title_ar: { type: string }
+                price: { type: number }
+                currency: { type: string }
+                is_kot: { type: boolean }
+      responses:
+        '200':
+          description: Item created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /pos/cafe/tables:
+    get:
+      tags: [05 Cafe POS Tables & Orders]
+      summary: List tables + open orders
+      operationId: cafePosTables
+      security:
+        - CafePosBearerAuth: []
+      responses:
+        '200':
+          description: FREE / OCCUPIED tables
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CafePosTablesResponse'
+
+  /pos/cafe/orders:
+    post:
+      tags: [05a Cafe POS Instant Orders]
+      summary: Instant cafe order (book + settle)
+      description: |
+        Creates a paid cafe order in one step (no open table cart).
+        Supports cash / card / split. Optional table_number tags the sale;
+        omit for counter/takeaway.
+      operationId: cafePosCheckoutOrder
+      security:
+        - CafePosBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, payment_mode]
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [menu_item_id, quantity]
+                    properties:
+                      menu_item_id: { type: string, format: uuid }
+                      quantity: { type: integer, minimum: 1 }
+                payment_mode:
+                  type: string
+                  enum: [cash, card, split]
+                split_cash_amount: { type: number }
+                split_card_amount: { type: number }
+                promo_code: { type: string }
+                table_number: { type: integer }
+                customer_id: { type: string, format: uuid }
+                customer_name: { type: string }
+                customer_email: { type: string, format: email }
+                customer_phone: { type: string }
+            example:
+              payment_mode: cash
+              promo_code: CAFE10
+              customer_name: Walk-up Guest
+              customer_phone: '+97455550000'
+              items:
+                - menu_item_id: 00000000-0000-0000-0000-000000000010
+                  quantity: 2
+      responses:
+        '200':
+          description: Settled order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /pos/cafe/customers/search:
+    get:
+      tags: [05c Cafe POS Customers]
+      summary: Search cafe customers
+      description: Search org customers by name, email, or phone (min 2 chars).
+      operationId: cafePosSearchCustomers
+      security:
+        - CafePosBearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+          example: ahmed
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 10
+      responses:
+        '200':
+          description: Matching customers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      customers:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: string, format: uuid }
+                            name: { type: string }
+                            phone: { type: string, nullable: true }
+                            email: { type: string, nullable: true }
+                            total_orders: { type: integer }
+                            event_orders: { type: integer }
+                            last_order_at: { type: string, nullable: true }
+
+  /pos/cafe/promocodes/apply:
+    post:
+      tags: [05b Cafe POS Promocodes]
+      summary: Preview / validate cafe promocode
+      description: |
+        Soft-validates a cafe promocode against cart lines without settling.
+        Optional `table_number` merges with the open table cart before calculating.
+        Returns `{ valid: true, ...totals }` or `{ valid: false, message }`.
+      operationId: cafePosApplyPromocode
+      security:
+        - CafePosBearerAuth: []
+      parameters:
+        - name: lang
+          in: query
+          schema:
+            type: string
+            enum: [en, ar]
+            default: en
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, items]
+              properties:
+                code:
+                  type: string
+                  example: CAFE10
+                table_number:
+                  type: integer
+                  description: Optional — merge with open table cart
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [menu_item_id, quantity]
+                    properties:
+                      menu_item_id: { type: string, format: uuid }
+                      quantity: { type: integer, minimum: 1 }
+            example:
+              code: CAFE10
+              table_number: 3
+              items:
+                - menu_item_id: 00000000-0000-0000-0000-000000000010
+                  quantity: 2
+      responses:
+        '200':
+          description: Promo preview (valid true/false)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid: { type: boolean }
+                  code: { type: string }
+                  message: { type: string }
+                  total_discount_amount: { type: number }
+                  subtotal_amount: { type: number }
+                  order_total: { type: number }
+                  currency: { type: string }
+
+  /pos/cafe/tables/book:
+    post:
+      tags: [05 Cafe POS Tables & Orders]
+      summary: Book table / add lines
+      description: Creates or merges open CafeOrder on the table (this is the cart).
+      operationId: cafePosBookTable
+      security:
+        - CafePosBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookCafeTableRequest'
+            example:
+              table_number: 3
+              payment_type: postpaid
+              lines:
+                - menu_item_id: 00000000-0000-0000-0000-000000000010
+                  quantity: 2
+              customer_name: Table Guest
+      responses:
+        '200':
+          description: Open order returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /pos/cafe/tables/clear:
+    post:
+      tags: [05 Cafe POS Tables & Orders]
+      summary: Settle / clear table
+      description: Closes open order and creates Order + OrderItems (source pos_cafe).
+      operationId: cafePosClearTable
+      security:
+        - CafePosBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClearCafeTableRequest'
+            example:
+              table_number: 3
+              payment_mode: cash
+      responses:
+        '200':
+          description: Table settled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClearCafeTableResponse'
+
+  /pos/cafe/report:
+    post:
+      tags: [06 Cafe POS Report]
+      summary: Cafe POS sales report
+      operationId: cafePosReport
+      security:
+        - CafePosBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [date]
+              properties:
+                date: { type: string, example: '2026-08-12' }
+                end_date: { type: string }
+                category_id: { type: string, format: uuid }
+                menu_item_id: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Totals + bookings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /pos/cafe/daily-closings:
+    get:
+      tags: [07 Cafe POS Daily Closings]
+      summary: List cafe POS daily closings
+      operationId: cafePosListDailyClosings
+      security:
+        - CafePosBearerAuth: []
+      parameters:
+        - name: closing_for_date
+          in: query
+          schema:
+            type: string
+            example: '2026-08-12'
+      responses:
+        '200':
+          description: Closings + live sales
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+    post:
+      tags: [07 Cafe POS Daily Closings]
+      summary: Create cafe POS daily closing
+      operationId: cafePosCreateDailyClosing
+      security:
+        - CafePosBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [closing_for_date, received_cash_amount, received_card_amount]
+              properties:
+                closing_for_date: { type: string }
+                received_cash_amount: { type: number }
+                received_card_amount: { type: number }
+                note: { type: string }
+      responses:
+        '200':
+          description: Closing created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /pos/cafe/daily-closings/{id}/note:
+    post:
+      tags: [07 Cafe POS Daily Closings]
+      summary: Add note to daily closing
+      operationId: cafePosDailyClosingNote
+      security:
+        - CafePosBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                note: { type: string }
+      responses:
+        '200':
+          description: Note saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'

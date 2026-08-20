@@ -1,0 +1,3 @@
+ALTER TABLE "ticket_types"
+ADD COLUMN "inclusions" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+ADD COLUMN "exclusions" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

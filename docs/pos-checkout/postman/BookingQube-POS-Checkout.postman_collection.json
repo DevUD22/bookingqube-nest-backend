@@ -1,0 +1,821 @@
+{
+  "info": {
+    "_postman_id": "bq-pos-checkout-v2",
+    "name": "BookingQube POS Checkout",
+    "description": "Event POS APIs for BookingQube V2 — auth, tickets, agents, promocodes, book-ticket, advances, customers, online tickets, daily closing/shift report.\\n\\nImport with BookingQube-POS-Local.postman_environment.json (or BookingQube-Local).\\nBase URL: {{baseUrl}} = http://localhost:3002/api/v1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00 POS Auth",
+      "item": [
+        {
+          "name": "POS Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.token) pm.environment.set('token', json.token);",
+                  "  const d = json && json.data;",
+                  "  if (d && d.id) pm.environment.set('agentId', d.id);",
+                  "  if (d && d.event) {",
+                  "    if (d.event.id) pm.environment.set('eventId', d.event.id);",
+                  "    if (d.event.slug) pm.environment.set('eventSlug', d.event.slug);",
+                  "  }",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{posEmail}}\",\n  \"password\": \"{{posPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pos/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Login with email or username + password. Response `data.event` includes currency and waiver fields. Saves `token`, `agentId`, `eventId`, `eventSlug`."
+          },
+          "response": []
+        }
+      ],
+      "description": "Separate POS agent login — agent must be assigned to an event"
+    },
+    {
+      "name": "00 POS Tickets",
+      "item": [
+        {
+          "name": "List POS Tickets",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const tickets = json && json.data && json.data.tickets;",
+                  "  if (Array.isArray(tickets) && tickets.length) {",
+                  "    pm.environment.set('ticketId', tickets[0].ticket_id || tickets[0].id);",
+                  "  }",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pos/tickets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "tickets"
+              ]
+            },
+            "description": "Also returns addons and time_extensions. Excludes hide_from_pos. Shareholder agents only see their vendors' tickets. Waiver fields are on login data.event."
+          },
+          "response": []
+        }
+      ],
+      "description": "Tickets for the logged-in agent's assigned event (hide_from_pos excluded)"
+    },
+    {
+      "name": "01 POS Agents",
+      "item": [
+        {
+          "name": "List Agents",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const agents = json && json.data && json.data.agents;",
+                  "  if (Array.isArray(agents) && agents.length) {",
+                  "    pm.environment.set('agentId', agents[0].id);",
+                  "  }",
+                  "  if (json && json.data && json.data.event_id) {",
+                  "    pm.environment.set('eventId', json.data.event_id);",
+                  "  }",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pos/agents?event_slug={{eventSlug}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "agents"
+              ],
+              "query": [
+                {
+                  "key": "event_slug",
+                  "value": "{{eventSlug}}"
+                },
+                {
+                  "key": "event_id",
+                  "value": "{{eventId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Requires event_slug or event_id. Saves first agent to `agentId`."
+          },
+          "response": []
+        }
+      ],
+      "description": "List POS staff assigned to an event"
+    },
+    {
+      "name": "01 POS Promocodes",
+      "item": [
+        {
+          "name": "List Offers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pos/promocodes/offers?lang={{lang}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "promocodes",
+                "offers"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "{{lang}}"
+                }
+              ]
+            },
+            "description": "GET /pos/promocodes/offers — offers visible to this POS agent/ticket scope."
+          },
+          "response": []
+        },
+        {
+          "name": "Apply Promocode",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"FAMILY10\",\n  \"selected_tickets\": [\n    {\n      \"ticket_id\": \"{{ticketId}}\",\n      \"variant_id\": null,\n      \"quantity\": 2,\n      \"unit_price\": 100\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pos/promocodes/apply?lang={{lang}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "promocodes",
+                "apply"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "{{lang}}"
+                }
+              ]
+            },
+            "description": "Same response as customer apply. With POS JWT, event_slug is optional."
+          },
+          "response": []
+        }
+      ],
+      "description": "Validate promo before POS book-ticket (same rules as customer /promocodes/apply)"
+    },
+    {
+      "name": "02 POS Booking",
+      "item": [
+        {
+          "name": "Book Ticket (Cash)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const d = pm.response.json().data;",
+                  "  if (d && d.common_order) pm.environment.set('commonOrder', d.common_order);",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agent_id\": \"{{agentId}}\",\n  \"offline_payment\": {\n    \"mode\": \"cash\"\n  },\n  \"event_slug\": \"{{eventSlug}}\",\n  \"schedule\": {\n    \"date\": \"{{sessionDate}}\",\n    \"time\": \"{{sessionTime}}\"\n  },\n  \"tickets\": [\n    {\n      \"ticket_id\": \"{{ticketId}}\",\n      \"quantity\": 2,\n      \"unit_price\": 100\n    }\n  ],\n  \"customer\": {\n    \"name\": \"Walk-in Guest\",\n    \"email\": \"guest@example.com\",\n    \"phone\": \"+97455550000\"\n  },\n  \"totals\": {\n    \"subtotal\": 200,\n    \"discount_amount\": 0,\n    \"total\": 200,\n    \"currency\": \"QAR\"\n  },\n  \"waiver\": {\n    \"accepted\": true,\n    \"signed_by\": \"Walk-in Guest\"\n  },\n  \"idempotency_key\": \"pos-cash-{{$timestamp}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pos/book-ticket?lang={{lang}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "book-ticket"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "{{lang}}"
+                }
+              ]
+            },
+            "description": "`agent_id` + `offline_payment.mode` required. Set `ticketId` from event tickets API."
+          },
+          "response": []
+        },
+        {
+          "name": "Book Ticket (Card)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agent_id\": \"{{agentId}}\",\n  \"offline_payment\": {\n    \"mode\": \"card\"\n  },\n  \"event_slug\": \"{{eventSlug}}\",\n  \"schedule\": {\n    \"date\": \"{{sessionDate}}\",\n    \"time\": \"{{sessionTime}}\"\n  },\n  \"tickets\": [\n    {\n      \"ticket_id\": \"{{ticketId}}\",\n      \"quantity\": 1,\n      \"unit_price\": 100\n    }\n  ],\n  \"customer\": {\n    \"name\": \"Card Guest\",\n    \"email\": \"card@example.com\"\n  },\n  \"totals\": {\n    \"subtotal\": 100,\n    \"total\": 100,\n    \"currency\": \"QAR\"\n  },\n  \"idempotency_key\": \"pos-card-{{$timestamp}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pos/book-ticket?lang={{lang}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "book-ticket"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "{{lang}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Book Ticket (Split)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agent_id\": \"{{agentId}}\",\n  \"offline_payment\": {\n    \"mode\": \"split\",\n    \"split_cash_amount\": 50,\n    \"split_card_amount\": 50\n  },\n  \"event_slug\": \"{{eventSlug}}\",\n  \"schedule\": {\n    \"date\": \"{{sessionDate}}\",\n    \"time\": \"{{sessionTime}}\"\n  },\n  \"tickets\": [\n    {\n      \"ticket_id\": \"{{ticketId}}\",\n      \"quantity\": 1,\n      \"unit_price\": 100\n    }\n  ],\n  \"totals\": {\n    \"subtotal\": 100,\n    \"total\": 100,\n    \"currency\": \"QAR\"\n  },\n  \"idempotency_key\": \"pos-split-{{$timestamp}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pos/book-ticket?lang={{lang}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "book-ticket"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "{{lang}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Book Ticket (Advance)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const d = pm.response.json().data;",
+                  "  if (d && d.common_order) pm.environment.set('commonOrder', d.common_order);",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agent_id\": \"{{agentId}}\",\n  \"offline_payment\": {\n    \"mode\": \"advance\",\n    \"advance_amount\": 50,\n    \"advance_type\": \"cash\"\n  },\n  \"event_slug\": \"{{eventSlug}}\",\n  \"schedule\": {\n    \"date\": \"{{sessionDate}}\",\n    \"time\": \"{{sessionTime}}\"\n  },\n  \"tickets\": [\n    {\n      \"ticket_id\": \"{{ticketId}}\",\n      \"quantity\": 1,\n      \"unit_price\": 100\n    }\n  ],\n  \"customer\": {\n    \"name\": \"Advance Guest\",\n    \"email\": \"advance@example.com\",\n    \"phone\": \"+97455551111\"\n  },\n  \"totals\": {\n    \"subtotal\": 100,\n    \"total\": 100,\n    \"currency\": \"QAR\"\n  },\n  \"idempotency_key\": \"pos-adv-{{$timestamp}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pos/book-ticket?lang={{lang}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "book-ticket"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "{{lang}}"
+                }
+              ]
+            },
+            "description": "Creates pending advance. Complete remaining via folder 03."
+          },
+          "response": []
+        },
+        {
+          "name": "Book Ticket (Comp)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agent_id\": \"{{agentId}}\",\n  \"offline_payment\": {\n    \"mode\": \"comp\"\n  },\n  \"event_slug\": \"{{eventSlug}}\",\n  \"schedule\": {\n    \"date\": \"{{sessionDate}}\",\n    \"time\": \"{{sessionTime}}\"\n  },\n  \"tickets\": [\n    {\n      \"ticket_id\": \"{{ticketId}}\",\n      \"quantity\": 1,\n      \"unit_price\": 0\n    }\n  ],\n  \"customer\": {\n    \"name\": \"Complimentary Guest\"\n  },\n  \"totals\": {\n    \"subtotal\": 0,\n    \"total\": 0,\n    \"currency\": \"QAR\"\n  },\n  \"idempotency_key\": \"pos-comp-{{$timestamp}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pos/book-ticket?lang={{lang}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "book-ticket"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "{{lang}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Offline book-ticket — cash / card / split / advance / comp"
+    },
+    {
+      "name": "03 POS Advance Payments",
+      "item": [
+        {
+          "name": "Search Pending Advances",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const rows = pm.response.json().data;",
+                  "  if (Array.isArray(rows) && rows.length && rows[0].common_order) {",
+                  "    pm.environment.set('commonOrder', rows[0].common_order);",
+                  "  }",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"search\": \"{{commonOrder}}\",\n  \"event_id\": \"{{eventId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pos/advance-payments/pending",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "advance-payments",
+                "pending"
+              ]
+            },
+            "description": "`search` should be non-empty (order no / customer)."
+          },
+          "response": []
+        },
+        {
+          "name": "Complete Advance",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"common_order\": \"{{commonOrder}}\",\n  \"remaining_payment\": \"cash\",\n  \"agent_id\": \"{{agentId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pos/advance-payments/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "advance-payments",
+                "complete"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Find pending advances and collect remaining payment"
+    },
+    {
+      "name": "04 POS Customers",
+      "description": "Search/resolve walk-in customers (age group + nationality options)",
+      "item": [
+        {
+          "name": "Customer Options",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pos/customers/options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "customers",
+                "options"
+              ]
+            },
+            "description": "GET /pos/customers/options — age_groups and nationalities for POS forms."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Customers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const d = pm.response.json().data;",
+                  "  const rows = d && d.customers;",
+                  "  if (Array.isArray(rows) && rows[0] && rows[0].id) {",
+                  "    pm.environment.set('posCustomerId', rows[0].id);",
+                  "  }",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pos/customers/search?q={{customerSearch}}&limit=8",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "customers",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "{{customerSearch}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "8"
+                }
+              ]
+            },
+            "description": "GET /pos/customers/search — min 2 chars; name/email/phone. Saves posCustomerId."
+          },
+          "response": []
+        },
+        {
+          "name": "Resolve Customer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const d = json && json.data;",
+                  "  const id = (d && d.id) || (d && d.customer && d.customer.id);",
+                  "  if (id) pm.environment.set('posCustomerId', id);",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Walk-in Guest\",\n  \"phone\": \"+97455550000\",\n  \"email\": \"guest@example.com\",\n  \"age_group\": \"25-34\",\n  \"nationality\": \"Qatari\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pos/customers/resolve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "customers",
+                "resolve"
+              ]
+            },
+            "description": "POST /pos/customers/resolve — find or create customer for POS booking."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05 POS Online Tickets",
+      "description": "Search online bookings and mark tickets used (RFID/barcode)",
+      "item": [
+        {
+          "name": "Search Online Tickets",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const d = pm.response.json().data;",
+                  "  const tickets = d && d.tickets;",
+                  "  if (Array.isArray(tickets) && tickets[0] && tickets[0].id) {",
+                  "    pm.environment.set('onlineTicketId', tickets[0].id);",
+                  "  }",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pos/online-tickets/search?q={{onlineTicketSearch}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "online-tickets",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "{{onlineTicketSearch}}"
+                }
+              ]
+            },
+            "description": "GET /pos/online-tickets/search — phone, ticket code, common_order, or UUID (min 3 chars)."
+          },
+          "response": []
+        },
+        {
+          "name": "Use Online Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rfids\": [\n    \"RFID001\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pos/online-tickets/{{onlineTicketId}}/use",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "online-tickets",
+                "{{onlineTicketId}}",
+                "use"
+              ]
+            },
+            "description": "POST /pos/online-tickets/:id/use — optional rfids[]. Syncs attendance."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "06 POS Daily Closing (Shift)",
+      "description": "Agent sales report + close shift (creates DailyClosing). Blocked after close.",
+      "item": [
+        {
+          "name": "Get Shift Report",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const d = pm.response.json().data;",
+                  "  if (d && d.closing && d.closing.id) {",
+                  "    pm.environment.set('dailyClosingId', d.closing.id);",
+                  "  }",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pos/shift?date={{closingDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "shift"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "{{closingDate}}"
+                }
+              ]
+            },
+            "description": "GET /pos/shift — expected cash/card/ticket/addon totals for date (defaults to today Qatar). This is the POS agent sales report."
+          },
+          "response": []
+        },
+        {
+          "name": "Close Shift (Daily Closing)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const d = pm.response.json().data;",
+                  "  if (d && d.closing && d.closing.id) {",
+                  "    pm.environment.set('dailyClosingId', d.closing.id);",
+                  "  }",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"{{closingDate}}\",\n  \"declared_cash\": 100,\n  \"declared_card\": 50,\n  \"note\": \"End of day drawer count\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pos/shift/close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pos",
+                "shift",
+                "close"
+              ]
+            },
+            "description": "POST /pos/shift/close — creates DailyClosing for agent+event+date. Blocks further sales for that day."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3002/api/v1"
+    }
+  ]
+}

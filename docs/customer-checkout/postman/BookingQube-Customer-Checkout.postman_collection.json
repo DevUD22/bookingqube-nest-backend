@@ -1,0 +1,1860 @@
+{
+  "info": {
+    "_postman_id": "bq-customer-checkout-collection",
+    "name": "BookingQube Customer Checkout, POS & Cafe",
+    "description": "Folder-wise APIs for BookingQube V2.\\n\\n**Customer (Next.js website):** 01–06\\n**POS:** 07 — auth, tickets, book, advances, customers, online tickets, daily closing/shift\\n**Cafe POS:** CAFE — auth, menu, tables, report, daily closings (uses cafePosToken)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3002/api/v1"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Auth",
+      "description": "Public — register, login, social login, password reset OTP",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Jane Doe\",\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\",\n  \"password_confirmation\": \"{{customerPassword}}\",\n  \"accept\": true,\n  \"phone\": \"+97455550000\",\n  \"gender\": \"female\"\n}"
+            },
+            "url": "{{baseUrl}}/register",
+            "description": "Creates account. Does not return JWT — call Login next."
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.token) {",
+                  "    pm.environment.set('token', json.token);",
+                  "  }",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\",\n  \"device_name\": \"postman\"\n}"
+            },
+            "url": "{{baseUrl}}/login",
+            "description": "Returns JWT in `token`. Test script saves it to environment."
+          }
+        },
+        {
+          "name": "Social Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.token) {",
+                  "    pm.environment.set('token', json.token);",
+                  "  }",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"google\",\n  \"access_token\": \"REPLACE_WITH_PROVIDER_TOKEN\",\n  \"other_data\": \"{\\\"name\\\":\\\"Jane Doe\\\",\\\"email\\\":\\\"jane@example.com\\\"}\"\n}"
+            },
+            "url": "{{baseUrl}}/social_login",
+            "description": "`other_data` must be a JSON **string**. Providers: google | apple."
+          }
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{customerEmail}}\"\n}"
+            },
+            "url": "{{baseUrl}}/password/forgot"
+          }
+        },
+        {
+          "name": "Verify OTP",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"otp\": \"123456\"\n}"
+            },
+            "url": "{{baseUrl}}/password/verify-otp",
+            "description": "OTP is exactly 6 digits."
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"otp\": \"123456\",\n  \"password\": \"{{customerPassword}}\",\n  \"password_confirmation\": \"{{customerPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/password/reset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 Browse Catalog",
+      "description": "Public browse — homepage, listing, detail, schedule, tickets, content pages (as used by Next.js customer site)",
+      "item": [
+        {
+          "name": "Homepage Hero & Categories",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/homepage/hero-and-category-section?lang={{lang}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "homepage",
+                "hero-and-category-section"
+              ],
+              "query": [
+                {
+                  "key": "lang",
+                  "value": "{{lang}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Homepage Sections",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/homepage/sections?lang={{lang}}"
+          }
+        },
+        {
+          "name": "Homepage Venues",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/homepage/venues-section?lang={{lang}}"
+          }
+        },
+        {
+          "name": "Homepage Feeds",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/homepage/feeds?lang={{lang}}"
+          }
+        },
+        {
+          "name": "Homepage Quick Book",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/homepage/quick-book-section?lang={{lang}}"
+          }
+        },
+        {
+          "name": "Footer",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/footer?lang={{lang}}"
+          }
+        },
+        {
+          "name": "Event Listing",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/event-listing?lang={{lang}}"
+          }
+        },
+        {
+          "name": "Search Events",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/events/search?q=family&lang={{lang}}&limit=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "events",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "family"
+                },
+                {
+                  "key": "lang",
+                  "value": "{{lang}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Event Detail",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "description": "Includes payment_methods from admin-enabled gateways (myfatoorah→10/11/12, qpay→7, mastercard→8).",
+            "url": "{{baseUrl}}/events/{{eventSlug}}/detail?lang={{lang}}"
+          }
+        },
+        {
+          "name": "Event Schedule",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/events/{{eventSlug}}/schedule?month=2026-08&page=1&lang={{lang}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "events",
+                "{{eventSlug}}",
+                "schedule"
+              ],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "2026-08"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "lang",
+                  "value": "{{lang}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Event Tickets",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const tickets = json && json.data && json.data.tickets;",
+                  "  if (Array.isArray(tickets) && tickets.length) {",
+                  "    const id = tickets[0].id || tickets[0].ticket_id;",
+                  "    if (id) pm.environment.set('ticketId', String(id));",
+                  "  }",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/events/{{eventSlug}}/tickets?date={{sessionDate}}&time={{sessionTime}}&lang={{lang}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "events",
+                "{{eventSlug}}",
+                "tickets"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "{{sessionDate}}"
+                },
+                {
+                  "key": "time",
+                  "value": "{{sessionTime}}"
+                },
+                {
+                  "key": "lang",
+                  "value": "{{lang}}"
+                }
+              ]
+            },
+            "description": "`date` and `time` are required. Saves first ticket id to `ticketId` if present."
+          }
+        },
+        {
+          "name": "Offers Detail",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/homepage/offers-detail/{{offerSlug}}?lang={{lang}}",
+            "description": "Homepage offer / promotion detail page."
+          }
+        },
+        {
+          "name": "Artist Detail",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/artist/{{artistSlug}}?lang={{lang}}"
+          }
+        },
+        {
+          "name": "Blog Detail",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/blog/{{blogSlug}}?lang={{lang}}"
+          }
+        },
+        {
+          "name": "CMS Page",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/page/{{pageSlug}}?lang={{lang}}",
+            "description": "Static CMS pages (FAQ, terms, privacy, etc.).\n\n**Not migrated** — Nest returns HTTP 501:\n```json\n{\n  \"success\": false,\n  \"message\": \"not in system\",\n  \"data\": null\n}\n```"
+          },
+          "response": [
+            {
+              "name": "Not in system",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/page/{{pageSlug}}?lang={{lang}}"
+              },
+              "status": "Not Implemented",
+              "code": 501,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"not in system\",\n  \"data\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "Verify Event Password",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_password\": \"{{eventPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/events/{{eventSlug}}/verify-password",
+            "description": "Private event unlock. Response may include access_token used as X-Event-Access-Token on detail/tickets/book."
+          }
+        },
+        {
+          "name": "Venue Detail",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/venue-detail/sample-venue?lang={{lang}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 Registration Events",
+      "description": "Alternate checkout for registration-only events",
+      "item": [
+        {
+          "name": "Get Registration Form",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/registration-form/{{eventSlug}}?lang={{lang}}"
+          }
+        },
+        {
+          "name": "Submit Registration Form",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"{{eventSlug}}\",\n  \"fields\": {\n    \"name\": \"Jane Doe\",\n    \"email\": \"{{customerEmail}}\",\n    \"phone\": \"+97455550000\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/registration-form/submit",
+            "description": "Field keys depend on form definition from Get Registration Form."
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 Promocodes",
+      "description": "Validate promo before book-ticket (Next.js checkout)",
+      "item": [
+        {
+          "name": "Apply Promocode",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"SAVE10\",\n  \"event_slug\": \"{{eventSlug}}\",\n  \"selected_tickets\": [\n    {\n      \"ticket_id\": \"{{ticketId}}\",\n      \"variant_id\": null,\n      \"quantity\": 2,\n      \"unit_price\": 100\n    }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/promocodes/apply?lang={{lang}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 Checkout Book Pay",
+      "description": "Customer web checkout as used by Next.js: book-ticket + MyFatoorah embedded + QPay. Optional Bearer.",
+      "item": [
+        {
+          "name": "Book Ticket",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const d = json && json.data;",
+                  "  if (d) {",
+                  "    if (d.hold_id) pm.environment.set('holdId', d.hold_id);",
+                  "    if (d.common_order) pm.environment.set('commonOrder', d.common_order);",
+                  "  }",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_slug\": \"{{eventSlug}}\",\n  \"schedule\": {\n    \"date\": \"{{sessionDate}}\",\n    \"time\": \"{{sessionTime}}\"\n  },\n  \"tickets\": [\n    {\n      \"ticket_id\": \"{{ticketId}}\",\n      \"quantity\": 1,\n      \"unit_price\": 100\n    }\n  ],\n  \"promo_code\": null,\n  \"customer\": {\n    \"name\": \"Jane Doe\",\n    \"email\": \"{{customerEmail}}\",\n    \"phone\": \"+97455550000\"\n  },\n  \"totals\": {\n    \"subtotal\": 100,\n    \"discount_amount\": 0,\n    \"total\": 100,\n    \"currency\": \"QAR\"\n  },\n  \"waiver\": {\n    \"accepted\": true,\n    \"signed_by\": \"Jane Doe\"\n  },\n  \"metadata\": {\n    \"source\": \"web\",\n    \"locale\": \"en\"\n  },\n  \"idempotency_key\": \"postman-book-{{$timestamp}}\",\n  \"paymentDetailPayload\": {\n    \"status\": \"pending\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/book-ticket?lang={{lang}}",
+            "description": "Optional Bearer. Used for free / offline / after MyFatoorah confirm. Next.js posts via BFF /api/v2/book-ticket."
+          }
+        },
+        {
+          "name": "MyFatoorah Initiate Embedded Sessions",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100,\n  \"currency\": \"QAR\",\n  \"idempotency_key\": \"postman-mf-{{$timestamp}}\",\n  \"embedded_methods\": [\"applepay\", \"googlepay\", \"card\"]\n}"
+            },
+            "url": "{{baseUrl}}/myfatoorah/initiate-embedded-sessions",
+            "description": "Starts MyFatoorah Embedded Payment v3 sessions. Bearer usually required. Used by Next.js checkout before rendering payment widgets."
+          }
+        },
+        {
+          "name": "MyFatoorah Confirm Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{myfatoorahSessionId}}\",\n  \"payment_data\": {},\n  \"payment_id\": \"{{myfatoorahPaymentId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/myfatoorah/confirm-payment",
+            "description": "Confirms gateway payment after embedded widget success. Then call Book Ticket with providerResponse from this response."
+          }
+        },
+        {
+          "name": "QPay Checkout Params",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/qpay/checkout-params?sid={{qpaySid}}&token={{qpayToken}}&exp={{qpayExp}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "qpay",
+                "checkout-params"
+              ],
+              "query": [
+                {
+                  "key": "sid",
+                  "value": "{{qpaySid}}"
+                },
+                {
+                  "key": "token",
+                  "value": "{{qpayToken}}"
+                },
+                {
+                  "key": "exp",
+                  "value": "{{qpayExp}}"
+                }
+              ]
+            },
+            "description": "Signed QPay session params for Next.js /qpay-redirect auto-POST form. No JWT."
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 Customer Account",
+      "description": "Bearer JWT required — profile, favorites, bookings",
+      "item": [
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/customer/profile"
+          }
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Jane Doe\",\n  \"phone\": \"+97455550000\",\n  \"address\": \"Doha\"\n}"
+            },
+            "url": "{{baseUrl}}/customer/profile"
+          }
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current\": \"{{customerPassword}}\",\n  \"password\": \"NewSecret123!\",\n  \"password_confirmation\": \"NewSecret123!\"\n}"
+            },
+            "url": "{{baseUrl}}/customer/profile/password"
+          }
+        },
+        {
+          "name": "List Favorites",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/customer/favorites?lang={{lang}}"
+          }
+        },
+        {
+          "name": "Add Favorite",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"{{eventId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/customer/favorites?lang={{lang}}",
+            "description": "Next.js sends event_id. Nest also accepts slug."
+          }
+        },
+        {
+          "name": "Remove Favorite",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/customer/favorites/{{eventId}}",
+            "description": "Path param is event UUID/id, not ticket id."
+          }
+        },
+        {
+          "name": "My Bookings",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/customer/bookings?page=1&per_page=6&lang={{lang}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "bookings"
+              ],
+              "query": [
+                {
+                  "key": "from_date",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "to_date",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "6"
+                },
+                {
+                  "key": "lang",
+                  "value": "{{lang}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Download Booking Tickets",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/pdf,text/html,application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/bookings/{{commonOrder}}/tickets?format=card",
+            "description": "Next.js my-tickets download. Accept PDF or HTML; format=card|classic."
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 POS Checkout",
+      "description": "Event POS — auth, tickets, agents, promocodes, book-ticket, advances, customers, online tickets, daily closing/shift report",
+      "item": [
+        {
+          "name": "00 POS Auth",
+          "description": "Separate POS agent login — agent must be assigned to an event",
+          "item": [
+            {
+              "name": "POS Login",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const json = pm.response.json();",
+                      "  if (json && json.token) pm.environment.set('token', json.token);",
+                      "  const d = json && json.data;",
+                      "  if (d && d.id) pm.environment.set('agentId', d.id);",
+                      "  if (d && d.event) {",
+                      "    if (d.event.id) pm.environment.set('eventId', d.event.id);",
+                      "    if (d.event.slug) pm.environment.set('eventSlug', d.event.slug);",
+                      "  }",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{posEmail}}\",\n  \"password\": \"{{posPassword}}\"\n}"
+                },
+                "url": "{{baseUrl}}/pos/auth/login",
+                "description": "Login with email or username + password. Response `data.event` includes currency and waiver fields. Saves `token`, `agentId`, `eventId`, `eventSlug`."
+              }
+            }
+          ]
+        },
+        {
+          "name": "00 POS Tickets",
+          "description": "Tickets for the logged-in agent's assigned event (hide_from_pos excluded)",
+          "item": [
+            {
+              "name": "List POS Tickets",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const json = pm.response.json();",
+                      "  const tickets = json && json.data && json.data.tickets;",
+                      "  if (Array.isArray(tickets) && tickets.length) {",
+                      "    pm.environment.set('ticketId', tickets[0].ticket_id || tickets[0].id);",
+                      "  }",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{baseUrl}}/pos/tickets",
+                "description": "Also returns addons and time_extensions. Excludes hide_from_pos. Shareholder agents only see their vendors' tickets. Waiver fields are on login data.event."
+              }
+            }
+          ]
+        },
+        {
+          "name": "01 POS Agents",
+          "description": "List POS staff assigned to an event",
+          "item": [
+            {
+              "name": "List Agents",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const json = pm.response.json();",
+                      "  const agents = json && json.data && json.data.agents;",
+                      "  if (Array.isArray(agents) && agents.length) {",
+                      "    pm.environment.set('agentId', agents[0].id);",
+                      "  }",
+                      "  if (json && json.data && json.data.event_id) {",
+                      "    pm.environment.set('eventId', json.data.event_id);",
+                      "  }",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/pos/agents?event_slug={{eventSlug}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "pos",
+                    "agents"
+                  ],
+                  "query": [
+                    {
+                      "key": "event_slug",
+                      "value": "{{eventSlug}}"
+                    },
+                    {
+                      "key": "event_id",
+                      "value": "{{eventId}}",
+                      "disabled": true
+                    }
+                  ]
+                },
+                "description": "Requires event_slug or event_id. Saves first agent to `agentId`."
+              }
+            }
+          ]
+        },
+        {
+          "name": "01 POS Promocodes",
+          "description": "Validate promo before POS book-ticket (same rules as customer /promocodes/apply)",
+          "item": [
+            {
+              "name": "List Offers",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/pos/promocodes/offers?lang={{lang}}",
+                "description": "GET /pos/promocodes/offers — offers visible to this POS agent/ticket scope."
+              }
+            },
+            {
+              "name": "Apply Promocode",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"code\": \"FAMILY10\",\n  \"selected_tickets\": [\n    {\n      \"ticket_id\": \"{{ticketId}}\",\n      \"variant_id\": null,\n      \"quantity\": 2,\n      \"unit_price\": 100\n    }\n  ]\n}"
+                },
+                "url": "{{baseUrl}}/pos/promocodes/apply?lang={{lang}}",
+                "description": "Same response as customer apply. With POS JWT, event_slug is optional."
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 POS Booking",
+          "description": "Offline book-ticket — cash / card / split / advance / comp",
+          "item": [
+            {
+              "name": "Book Ticket (Cash)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const d = pm.response.json().data;",
+                      "  if (d && d.common_order) pm.environment.set('commonOrder', d.common_order);",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"agent_id\": \"{{agentId}}\",\n  \"offline_payment\": {\n    \"mode\": \"cash\"\n  },\n  \"event_slug\": \"{{eventSlug}}\",\n  \"schedule\": {\n    \"date\": \"{{sessionDate}}\",\n    \"time\": \"{{sessionTime}}\"\n  },\n  \"tickets\": [\n    {\n      \"ticket_id\": \"{{ticketId}}\",\n      \"quantity\": 2,\n      \"unit_price\": 100\n    }\n  ],\n  \"customer\": {\n    \"name\": \"Walk-in Guest\",\n    \"email\": \"guest@example.com\",\n    \"phone\": \"+97455550000\"\n  },\n  \"totals\": {\n    \"subtotal\": 200,\n    \"discount_amount\": 0,\n    \"total\": 200,\n    \"currency\": \"QAR\"\n  },\n  \"waiver\": {\n    \"accepted\": true,\n    \"signed_by\": \"Walk-in Guest\"\n  },\n  \"idempotency_key\": \"pos-cash-{{$timestamp}}\"\n}"
+                },
+                "url": "{{baseUrl}}/pos/book-ticket?lang={{lang}}",
+                "description": "`agent_id` + `offline_payment.mode` required. Set `ticketId` from event tickets API."
+              }
+            },
+            {
+              "name": "Book Ticket (Card)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"agent_id\": \"{{agentId}}\",\n  \"offline_payment\": {\n    \"mode\": \"card\"\n  },\n  \"event_slug\": \"{{eventSlug}}\",\n  \"schedule\": {\n    \"date\": \"{{sessionDate}}\",\n    \"time\": \"{{sessionTime}}\"\n  },\n  \"tickets\": [\n    {\n      \"ticket_id\": \"{{ticketId}}\",\n      \"quantity\": 1,\n      \"unit_price\": 100\n    }\n  ],\n  \"customer\": {\n    \"name\": \"Card Guest\",\n    \"email\": \"card@example.com\"\n  },\n  \"totals\": {\n    \"subtotal\": 100,\n    \"total\": 100,\n    \"currency\": \"QAR\"\n  },\n  \"idempotency_key\": \"pos-card-{{$timestamp}}\"\n}"
+                },
+                "url": "{{baseUrl}}/pos/book-ticket?lang={{lang}}"
+              }
+            },
+            {
+              "name": "Book Ticket (Split)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"agent_id\": \"{{agentId}}\",\n  \"offline_payment\": {\n    \"mode\": \"split\",\n    \"split_cash_amount\": 50,\n    \"split_card_amount\": 50\n  },\n  \"event_slug\": \"{{eventSlug}}\",\n  \"schedule\": {\n    \"date\": \"{{sessionDate}}\",\n    \"time\": \"{{sessionTime}}\"\n  },\n  \"tickets\": [\n    {\n      \"ticket_id\": \"{{ticketId}}\",\n      \"quantity\": 1,\n      \"unit_price\": 100\n    }\n  ],\n  \"totals\": {\n    \"subtotal\": 100,\n    \"total\": 100,\n    \"currency\": \"QAR\"\n  },\n  \"idempotency_key\": \"pos-split-{{$timestamp}}\"\n}"
+                },
+                "url": "{{baseUrl}}/pos/book-ticket?lang={{lang}}"
+              }
+            },
+            {
+              "name": "Book Ticket (Advance)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const d = pm.response.json().data;",
+                      "  if (d && d.common_order) pm.environment.set('commonOrder', d.common_order);",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"agent_id\": \"{{agentId}}\",\n  \"offline_payment\": {\n    \"mode\": \"advance\",\n    \"advance_amount\": 50,\n    \"advance_type\": \"cash\"\n  },\n  \"event_slug\": \"{{eventSlug}}\",\n  \"schedule\": {\n    \"date\": \"{{sessionDate}}\",\n    \"time\": \"{{sessionTime}}\"\n  },\n  \"tickets\": [\n    {\n      \"ticket_id\": \"{{ticketId}}\",\n      \"quantity\": 1,\n      \"unit_price\": 100\n    }\n  ],\n  \"customer\": {\n    \"name\": \"Advance Guest\",\n    \"email\": \"advance@example.com\",\n    \"phone\": \"+97455551111\"\n  },\n  \"totals\": {\n    \"subtotal\": 100,\n    \"total\": 100,\n    \"currency\": \"QAR\"\n  },\n  \"idempotency_key\": \"pos-adv-{{$timestamp}}\"\n}"
+                },
+                "url": "{{baseUrl}}/pos/book-ticket?lang={{lang}}",
+                "description": "Creates pending advance. Complete remaining via folder 03."
+              }
+            },
+            {
+              "name": "Book Ticket (Comp)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"agent_id\": \"{{agentId}}\",\n  \"offline_payment\": {\n    \"mode\": \"comp\"\n  },\n  \"event_slug\": \"{{eventSlug}}\",\n  \"schedule\": {\n    \"date\": \"{{sessionDate}}\",\n    \"time\": \"{{sessionTime}}\"\n  },\n  \"tickets\": [\n    {\n      \"ticket_id\": \"{{ticketId}}\",\n      \"quantity\": 1,\n      \"unit_price\": 0\n    }\n  ],\n  \"customer\": {\n    \"name\": \"Complimentary Guest\"\n  },\n  \"totals\": {\n    \"subtotal\": 0,\n    \"total\": 0,\n    \"currency\": \"QAR\"\n  },\n  \"idempotency_key\": \"pos-comp-{{$timestamp}}\"\n}"
+                },
+                "url": "{{baseUrl}}/pos/book-ticket?lang={{lang}}"
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 POS Advance Payments",
+          "description": "Find pending advances and collect remaining payment",
+          "item": [
+            {
+              "name": "Search Pending Advances",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const rows = pm.response.json().data;",
+                      "  if (Array.isArray(rows) && rows.length && rows[0].common_order) {",
+                      "    pm.environment.set('commonOrder', rows[0].common_order);",
+                      "  }",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"search\": \"{{commonOrder}}\",\n  \"event_id\": \"{{eventId}}\"\n}"
+                },
+                "url": "{{baseUrl}}/pos/advance-payments/pending",
+                "description": "`search` should be non-empty (order no / customer)."
+              }
+            },
+            {
+              "name": "Complete Advance",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"common_order\": \"{{commonOrder}}\",\n  \"remaining_payment\": \"cash\",\n  \"agent_id\": \"{{agentId}}\"\n}"
+                },
+                "url": "{{baseUrl}}/pos/advance-payments/complete"
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 POS Customers",
+          "description": "Search/resolve walk-in customers (age group + nationality options)",
+          "item": [
+            {
+              "name": "Customer Options",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "description": "GET /pos/customers/options — age_groups and nationalities for POS forms.",
+                "url": "{{baseUrl}}/pos/customers/options"
+              }
+            },
+            {
+              "name": "Search Customers",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const d = pm.response.json().data;",
+                      "  const rows = d && d.customers;",
+                      "  if (Array.isArray(rows) && rows[0] && rows[0].id) {",
+                      "    pm.environment.set('posCustomerId', rows[0].id);",
+                      "  }",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "description": "GET /pos/customers/search — min 2 chars; name/email/phone. Saves posCustomerId.",
+                "url": "{{baseUrl}}/pos/customers/search?q={{customerSearch}}&limit=8"
+              }
+            },
+            {
+              "name": "Resolve Customer",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const json = pm.response.json();",
+                      "  const d = json && json.data;",
+                      "  const id = (d && d.id) || (d && d.customer && d.customer.id);",
+                      "  if (id) pm.environment.set('posCustomerId', id);",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "description": "POST /pos/customers/resolve — find or create customer for POS booking.",
+                "url": "{{baseUrl}}/pos/customers/resolve",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Walk-in Guest\",\n  \"phone\": \"+97455550000\",\n  \"email\": \"guest@example.com\",\n  \"age_group\": \"25-34\",\n  \"nationality\": \"Qatari\"\n}"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 POS Online Tickets",
+          "description": "Search online bookings and mark tickets used (RFID/barcode)",
+          "item": [
+            {
+              "name": "Search Online Tickets",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const d = pm.response.json().data;",
+                      "  const tickets = d && d.tickets;",
+                      "  if (Array.isArray(tickets) && tickets[0] && tickets[0].id) {",
+                      "    pm.environment.set('onlineTicketId', tickets[0].id);",
+                      "  }",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "description": "GET /pos/online-tickets/search — phone, ticket code, common_order, or UUID (min 3 chars).",
+                "url": "{{baseUrl}}/pos/online-tickets/search?q={{onlineTicketSearch}}"
+              }
+            },
+            {
+              "name": "Use Online Ticket",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "description": "POST /pos/online-tickets/:id/use — optional rfids[]. Syncs attendance.",
+                "url": "{{baseUrl}}/pos/online-tickets/{{onlineTicketId}}/use",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"rfids\": [\n    \"RFID001\"\n  ]\n}"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 POS Daily Closing (Shift)",
+          "description": "Agent sales report + close shift (creates DailyClosing). Blocked after close.",
+          "item": [
+            {
+              "name": "Get Shift Report",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const d = pm.response.json().data;",
+                      "  if (d && d.closing && d.closing.id) {",
+                      "    pm.environment.set('dailyClosingId', d.closing.id);",
+                      "  }",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "description": "GET /pos/shift — expected cash/card/ticket/addon totals for date (defaults to today Qatar). This is the POS agent sales report.",
+                "url": "{{baseUrl}}/pos/shift?date={{closingDate}}"
+              }
+            },
+            {
+              "name": "Close Shift (Daily Closing)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const d = pm.response.json().data;",
+                      "  if (d && d.closing && d.closing.id) {",
+                      "    pm.environment.set('dailyClosingId', d.closing.id);",
+                      "  }",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "description": "POST /pos/shift/close — creates DailyClosing for agent+event+date. Blocks further sales for that day.",
+                "url": "{{baseUrl}}/pos/shift/close",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"date\": \"{{closingDate}}\",\n  \"declared_cash\": 100,\n  \"declared_card\": 50,\n  \"note\": \"End of day drawer count\"\n}"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CAFE",
+      "description": "Dedicated cafe POS APIs — login, menu, tables, report, daily closings.",
+      "item": [
+        {
+          "name": "Auth",
+          "description": "Cafe POS login (public) and session. Saves `cafePosToken`.",
+          "item": [
+            {
+              "name": "Cafe POS Login",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const json = pm.response.json();",
+                      "  const token = (json && json.token) || (json && json.data && json.data.token);",
+                      "  if (token) pm.environment.set('cafePosToken', token);",
+                      "  const d = json && json.data;",
+                      "  if (d && d.id) pm.environment.set('cafeAgentId', d.id);",
+                      "  if (d && d.cafe && d.cafe.id) pm.environment.set('cafeId', d.cafe.id);",
+                      "  if (d && d.event && d.event.id) pm.environment.set('eventId', d.event.id);",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{cafeAgentEmail}}\",\n  \"password\": \"{{cafeAgentPassword}}\",\n  \"cafe_id\": \"{{cafeId}}\"\n}"
+                },
+                "url": "{{baseUrl}}/pos/cafe/auth/login",
+                "description": "POST /pos/cafe/auth/login — returns JWT typ=cafe_pos_access. Pass cafe_id when agent has multiple cafes."
+              }
+            },
+            {
+              "name": "Cafe POS Me",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{cafePosToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "url": "{{baseUrl}}/pos/cafe/me",
+                "description": "GET /pos/cafe/me — current cafe + event + agent from token."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Menu",
+          "description": "List and create menu from POS. Requires Bearer {{cafePosToken}}.",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{cafePosToken}}",
+                "type": "string"
+              }
+            ]
+          },
+          "item": [
+            {
+              "name": "Get Context",
+              "request": {
+                "method": "GET",
+                "url": "{{baseUrl}}/pos/cafe/context"
+              }
+            },
+            {
+              "name": "Get Menu",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const cats = pm.response.json().data && pm.response.json().data.categories;",
+                      "  if (!Array.isArray(cats)) return;",
+                      "  for (const c of cats) {",
+                      "    if (c && c.id) pm.environment.set('categoryId', c.id);",
+                      "    const direct = c.items || [];",
+                      "    if (direct.length) {",
+                      "      pm.environment.set('menuItemId', direct[0].id);",
+                      "      return;",
+                      "    }",
+                      "    for (const s of (c.subcategories || [])) {",
+                      "      if (s && s.id) pm.environment.set('subcategoryId', s.id);",
+                      "      const items = s.items || [];",
+                      "      if (items.length) {",
+                      "        pm.environment.set('menuItemId', items[0].id);",
+                      "        return;",
+                      "      }",
+                      "    }",
+                      "  }",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": "{{baseUrl}}/pos/cafe/menu",
+                "description": "GET /pos/cafe/menu — category.items = no subcategory; category.subcategories = named groups. Saves categoryId / subcategoryId / menuItemId when present."
+              }
+            },
+            {
+              "name": "Create Category",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const d = pm.response.json().data;",
+                      "  const row = d && (d.category || d);",
+                      "  if (row && row.id) pm.environment.set('categoryId', row.id);",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title_en\": \"Snacks\",\n  \"title_ar\": \"وجبات خفيفة\",\n  \"is_kot\": true\n}"
+                },
+                "url": "{{baseUrl}}/pos/cafe/menu/categories",
+                "description": "POST /pos/cafe/menu/categories"
+              }
+            },
+            {
+              "name": "Create Subcategory",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const d = pm.response.json().data;",
+                      "  const row = d && (d.subcategory || d);",
+                      "  if (row && row.id) pm.environment.set('subcategoryId', row.id);",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"category_id\": \"{{categoryId}}\",\n  \"title_en\": \"Sides\",\n  \"title_ar\": \"إضافات\"\n}"
+                },
+                "url": "{{baseUrl}}/pos/cafe/menu/subcategories",
+                "description": "POST /pos/cafe/menu/subcategories"
+              }
+            },
+            {
+              "name": "Create Menu Item",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const d = pm.response.json().data;",
+                      "  const row = d && (d.item || d);",
+                      "  if (row && row.id) pm.environment.set('menuItemId', row.id);",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"category_id\": \"{{categoryId}}\",\n  \"title_en\": \"French Fries\",\n  \"title_ar\": \"بطاطس\",\n  \"price\": 12,\n  \"currency\": \"QAR\",\n  \"is_kot\": true\n}"
+                },
+                "url": "{{baseUrl}}/pos/cafe/menu/items",
+                "description": "POST /pos/cafe/menu/items — optional subcategory_id."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tables & Orders",
+          "description": "Table list, book lines, clear/settle. Requires Bearer {{cafePosToken}}.",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{cafePosToken}}",
+                "type": "string"
+              }
+            ]
+          },
+          "item": [
+            {
+              "name": "List Tables",
+              "request": {
+                "method": "GET",
+                "url": "{{baseUrl}}/pos/cafe/tables",
+                "description": "GET /pos/cafe/tables"
+              }
+            },
+            {
+              "name": "Apply Cafe Promocode",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"code\": \"CAFE10\",\n  \"table_number\": {{tableNumber}},\n  \"items\": [\n    {\n      \"menu_item_id\": \"{{menuItemId}}\",\n      \"quantity\": 2\n    }\n  ]\n}"
+                },
+                "url": "{{baseUrl}}/pos/cafe/promocodes/apply?lang=en",
+                "description": "POST /pos/cafe/promocodes/apply — preview discount before book. Soft-fails with valid:false."
+              }
+            },
+            {
+              "name": "Search Customers",
+              "request": {
+                "method": "GET",
+                "url": "{{baseUrl}}/pos/cafe/customers/search?q=ahmed&limit=10",
+                "description": "GET /pos/cafe/customers/search — search by name, email, or phone (min 2 chars)."
+              }
+            },
+            {
+              "name": "Instant Order (book + settle)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"payment_mode\": \"cash\",\n  \"promo_code\": \"CAFE10\",\n  \"customer_name\": \"Walk-up Guest\",\n  \"customer_phone\": \"+97455550000\",\n  \"items\": [\n    {\n      \"menu_item_id\": \"{{menuItemId}}\",\n      \"quantity\": 2\n    }\n  ]\n}"
+                },
+                "url": "{{baseUrl}}/pos/cafe/orders",
+                "description": "POST /pos/cafe/orders — instant book+settle (cash/card/split). No open table cart."
+              }
+            },
+            {
+              "name": "Book Table (add items)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"table_number\": {{tableNumber}},\n  \"payment_type\": \"postpaid\",\n  \"promo_code\": \"CAFE10\",\n  \"items\": [\n    {\n      \"menu_item_id\": \"{{menuItemId}}\",\n      \"quantity\": 2\n    }\n  ],\n  \"customer_name\": \"Table Guest\",\n  \"customer_email\": \"table@example.com\"\n}"
+                },
+                "url": "{{baseUrl}}/pos/cafe/tables/book",
+                "description": "POST /pos/cafe/tables/book — agent_id optional (from token)."
+              }
+            },
+            {
+              "name": "Clear Table (settle)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const d = pm.response.json().data;",
+                      "  if (d && d.common_order) pm.environment.set('commonOrder', d.common_order);",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"table_number\": {{tableNumber}},\n  \"payment_mode\": \"cash\"\n}"
+                },
+                "url": "{{baseUrl}}/pos/cafe/tables/clear",
+                "description": "POST /pos/cafe/tables/clear — cash | card | split."
+              }
+            },
+            {
+              "name": "Clear Table (Split)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"table_number\": {{tableNumber}},\n  \"payment_mode\": \"split\",\n  \"split_cash_amount\": 20,\n  \"split_card_amount\": 16\n}"
+                },
+                "url": "{{baseUrl}}/pos/cafe/tables/clear"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Report",
+          "description": "Agent-scoped cafe sales report.",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{cafePosToken}}",
+                "type": "string"
+              }
+            ]
+          },
+          "item": [
+            {
+              "name": "Cafe Report",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"date\": \"{{closingDate}}\",\n  \"end_date\": \"{{closingDate}}\"\n}"
+                },
+                "url": "{{baseUrl}}/pos/cafe/report",
+                "description": "POST /pos/cafe/report — optional category_id, menu_item_id."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Daily Closings",
+          "description": "Daily closings for cafe POS agent on assigned event (DailyClosing model).",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{cafePosToken}}",
+                "type": "string"
+              }
+            ]
+          },
+          "item": [
+            {
+              "name": "List Daily Closings",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const d = pm.response.json().data;",
+                      "  const rows = d && d.closings;",
+                      "  if (Array.isArray(rows) && rows[0] && rows[0].id) {",
+                      "    pm.environment.set('dailyClosingId', rows[0].id);",
+                      "  }",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/pos/cafe/daily-closings?closing_for_date={{closingDate}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "pos",
+                    "cafe",
+                    "daily-closings"
+                  ],
+                  "query": [
+                    {
+                      "key": "closing_for_date",
+                      "value": "{{closingDate}}"
+                    }
+                  ]
+                },
+                "description": "GET /pos/cafe/daily-closings"
+              }
+            },
+            {
+              "name": "Create Daily Closing",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "try {",
+                      "  const d = pm.response.json().data;",
+                      "  if (d && d.id) pm.environment.set('dailyClosingId', d.id);",
+                      "} catch (e) {}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"closing_for_date\": \"{{closingDate}}\",\n  \"received_cash_amount\": 100,\n  \"received_card_amount\": 50,\n  \"note\": \"End of day\"\n}"
+                },
+                "url": "{{baseUrl}}/pos/cafe/daily-closings",
+                "description": "POST /pos/cafe/daily-closings"
+              }
+            },
+            {
+              "name": "Add Daily Closing Note",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"note\": \"Verified cash drawer\"\n}"
+                },
+                "url": "{{baseUrl}}/pos/cafe/daily-closings/{{dailyClosingId}}/note",
+                "description": "POST /pos/cafe/daily-closings/:id/note"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

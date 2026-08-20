@@ -1,0 +1,1117 @@
+openapi: 3.0.3
+info:
+  title: BookingQube POS Checkout & Booking API
+  description: |
+    Event POS sell workflow for BookingQube V2.
+
+    **Flow**
+    1. `POST /pos/auth/login` — POS agent login (assigned to an event)
+    2. `GET /pos/tickets` — tickets for assigned event (excludes hide_from_pos)
+    3. Optional: `GET /pos/customers/search` / `POST /pos/customers/resolve`
+    4. `GET /pos/promocodes/offers` or `POST /pos/promocodes/apply`
+    5. `POST /pos/book-ticket` — offline book (cash/card/split/advance/comp)
+    6. Advance: `POST /pos/advance-payments/pending` → `.../complete`
+    7. Online tickets: `GET /pos/online-tickets/search` → `POST /pos/online-tickets/:id/use`
+    8. Daily closing: `GET /pos/shift` (sales report) → `POST /pos/shift/close`
+
+    POS auth issues a dedicated Bearer JWT (`typ: pos_access`).
+    Booking still accepts optional customer/admin JWT; seller identity is `agent_id`.
+  version: 1.3.0
+
+servers:
+  - url: http://localhost:3002/api/v1
+    description: Local (.env)
+  - url: '{baseUrl}'
+    variables:
+      baseUrl:
+        default: http://localhost:3002/api/v1
+
+tags:
+  - name: 00 POS Auth
+    description: Dedicated POS agent login
+  - name: 01 POS Tickets
+    description: Tickets for the logged-in agent's event
+  - name: 02 POS Agents
+    description: List POS agents for an event
+  - name: 02 POS Promocodes
+    description: List offers and validate promocodes before POS book-ticket
+  - name: 03 POS Booking
+    description: Offline POS book-ticket
+  - name: 04 POS Advance Payments
+    description: Search pending advances and complete remaining payment
+  - name: 05 POS Customers
+    description: Search and resolve walk-in customers
+  - name: 06 POS Online Tickets
+    description: Search online bookings and mark tickets used
+  - name: 07 POS Daily Closing (Shift)
+    description: Agent sales report and shift close (DailyClosing)
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: POS JWT from /pos/auth/login (or optional customer/admin JWT on booking)
+
+  schemas:
+    PosLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          description: Email or username
+          example: pos-agent@example.com
+        password:
+          type: string
+          format: password
+        event_id:
+          type: string
+          format: uuid
+          description: Required when the agent has multiple event assignments
+
+    PosLoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        token:
+          type: string
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            email:
+              type: string
+            username:
+              type: string
+              nullable: true
+            phone:
+              type: string
+              nullable: true
+            event:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                slug:
+                  type: string
+                title:
+                  type: string
+                title_ar:
+                  type: string
+                  nullable: true
+                currency:
+                  type: string
+                  example: QAR
+                status:
+                  type: string
+                starts_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                ends_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                requires_waiver:
+                  type: boolean
+                waiver_form:
+                  type: string
+                  nullable: true
+                  description: English waiver HTML/text
+                waiver_form_ar:
+                  type: string
+                  nullable: true
+                  description: Arabic waiver HTML/text
+
+    PosTicketsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            tickets:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  ticket_id:
+                    type: string
+                    description: external_key used by book-ticket
+                  title:
+                    type: string
+                  subtitle:
+                    type: string
+                  price:
+                    type: number
+                  scope:
+                    type: string
+                    enum: [ticket, order]
+                    description: Ticket is the backward-compatible default. Order applies to every regular ticket and charges price once.
+                  ticket_ids:
+                    type: array
+                    items:
+                      type: string
+                    nullable: true
+                  currency:
+                    type: string
+                  admits:
+                    type: integer
+                  max_qty_per_order:
+                    type: integer
+                    nullable: true
+                  has_variants:
+                    type: boolean
+                  is_customizable:
+                    type: boolean
+                  has_duration:
+                    type: boolean
+                  duration_minutes:
+                    type: integer
+                    nullable: true
+                  variants:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        variant_id:
+                          type: string
+                        name:
+                          type: string
+                        description:
+                          type: string
+                          nullable: true
+                        price:
+                          type: number
+                        currency:
+                          type: string
+                        duration_minutes:
+                          type: integer
+                          nullable: true
+                        max_qty_per_order:
+                          type: integer
+                          nullable: true
+            addons:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  addon_id:
+                    type: string
+                  title:
+                    type: string
+                  title_ar:
+                    type: string
+                    nullable: true
+                  price:
+                    type: number
+                    nullable: true
+                  currency:
+                    type: string
+                  has_variants:
+                    type: boolean
+            time_extensions:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: Stable pack id for book-ticket time_extensions[]
+                  title:
+                    type: string
+                  title_ar:
+                    type: string
+                  minutes:
+                    type: number
+                  price:
+                    type: number
+
+    PosAgentListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            event_id:
+              type: string
+              format: uuid
+            event_slug:
+              type: string
+            organization_id:
+              type: string
+              format: uuid
+            agents:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                  email:
+                    type: string
+                  username:
+                    type: string
+                  assignment_id:
+                    type: string
+                    format: uuid
+
+    OfflinePayment:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [cash, card, split, advance, comp]
+        split_cash_amount:
+          type: number
+        split_card_amount:
+          type: number
+        advance_amount:
+          type: number
+        advance_type:
+          type: string
+          enum: [cash, card]
+        agent_id:
+          type: string
+          format: uuid
+        booked_by_agent_id:
+          type: string
+          format: uuid
+
+    PosBookTicketRequest:
+      type: object
+      required: [agent_id, offline_payment]
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+          description: Required — active POS agent user id
+        offline_payment:
+          $ref: '#/components/schemas/OfflinePayment'
+        event_slug:
+          type: string
+          example: sample-event
+          description: Optional with POS JWT — filled from the agent's assigned event.
+        schedule:
+          type: object
+          description: >
+            Optional for POS. When omitted, picks today's current (ongoing) active session
+            or the next upcoming slot (Asia/Qatar). Online checkout must still send date + time.
+          properties:
+            date:
+              type: string
+              example: '2026-08-15'
+            time:
+              type: string
+              example: '10:00 AM'
+        tickets:
+          type: array
+          items:
+            type: object
+            required: [ticket_id, quantity]
+            properties:
+              ticket_id:
+                type: string
+              variant_id:
+                type: string
+                nullable: true
+              quantity:
+                type: integer
+                minimum: 1
+              unit_price:
+                type: number
+              customization_options:
+                type: array
+                items:
+                  type: object
+                  required: [id, qty]
+                  properties:
+                    id:
+                      type: string
+                    qty:
+                      type: integer
+                    unit_price:
+                      type: number
+                    name:
+                      type: string
+        addons:
+          type: array
+          items:
+            type: object
+            required: [addon_id, quantity]
+            properties:
+              addon_id:
+                type: string
+              variant_id:
+                type: string
+                nullable: true
+              quantity:
+                type: integer
+              unit_price:
+                type: number
+        time_extensions:
+          type: array
+          description: Event more-ops time extension packs. Ticket scope needs ticket_id; order scope applies to every regular ticket and charges once.
+          items:
+            type: object
+            required: [id, quantity]
+            properties:
+              id:
+                type: string
+                description: Stable pack id from event more_ops_config.time_extensions
+              quantity:
+                type: integer
+                minimum: 1
+              ticket_id:
+                type: string
+                nullable: true
+                description: Ticket external key for ticket-scoped packs. Omit for order scope.
+              unit_price:
+                type: number
+        promo_code:
+          type: object
+          nullable: true
+          properties:
+            code:
+              type: string
+            ticket_id:
+              type: string
+              nullable: true
+            variant_id:
+              type: string
+              nullable: true
+        totals:
+          type: object
+          properties:
+            subtotal:
+              type: number
+            discount_amount:
+              type: number
+            total:
+              type: number
+            currency:
+              type: string
+              example: QAR
+        waiver:
+          type: object
+          properties:
+            accepted:
+              type: boolean
+            signed_by:
+              type: string
+              nullable: true
+            accepted_at:
+              type: string
+              nullable: true
+        customer:
+          type: object
+          properties:
+            user_id:
+              nullable: true
+            name:
+              type: string
+              nullable: true
+            email:
+              type: string
+              nullable: true
+            phone:
+              type: string
+              nullable: true
+        metadata:
+          type: object
+          properties:
+            source:
+              type: string
+              example: pos
+            locale:
+              type: string
+              example: en
+        idempotency_key:
+          type: string
+        success_url:
+          type: string
+        failed_url:
+          type: string
+        base_domain:
+          type: string
+        paymentDetailPayload:
+          type: object
+          additionalProperties: true
+
+    PosBookTicketResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            redirect_required:
+              type: boolean
+              example: false
+            payment_flow:
+              type: string
+              enum: [pos_offline, pos_advance]
+            offline_payment_mode:
+              type: string
+            is_advance_payment:
+              type: boolean
+            common_order:
+              type: string
+            order_no:
+              type: string
+            order_numbers:
+              type: array
+              items:
+                type: string
+            ticket_orders:
+              type: array
+              items:
+                type: object
+            total:
+              type: number
+            advance_amount:
+              type: number
+            remaining_amount:
+              type: number
+            currency:
+              type: string
+            temp_order_id:
+              type: string
+            hold_id:
+              type: string
+              nullable: true
+            status:
+              type: string
+              example: paid
+
+    AdvancePendingRequest:
+      type: object
+      properties:
+        search:
+          type: string
+          description: Required non-empty by service (order/customer search)
+          example: BQ-
+        event_id:
+          type: string
+          format: uuid
+
+    AdvancePendingResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              common_order:
+                type: string
+              customer_name:
+                type: string
+              customer_email:
+                type: string
+              customer_phone:
+                type: string
+              total_amount:
+                type: number
+              advance_amount:
+                type: number
+              remaining_amount:
+                type: number
+              advance_type:
+                type: string
+              currency:
+                type: string
+              event_id:
+                type: string
+              status:
+                type: string
+                example: PENDING
+              created_at:
+                type: string
+                format: date-time
+
+    AdvanceCompleteRequest:
+      type: object
+      required: [common_order]
+      properties:
+        common_order:
+          type: string
+        remaining_payment:
+          type: string
+          enum: [cash, card]
+          default: cash
+        agent_id:
+          type: string
+          format: uuid
+
+    AdvanceCompleteResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+          example: Advance booking completed.
+        data:
+          type: object
+          properties:
+            is_advance_payment:
+              type: boolean
+            common_order:
+              type: string
+            status:
+              type: string
+              example: paid
+            total:
+              type: number
+            currency:
+              type: string
+            cash_amount:
+              type: number
+            card_amount:
+              type: number
+
+paths:
+  /pos/auth/login:
+    post:
+      tags: [00 POS Auth]
+      summary: POS agent login
+      description: |
+        Authenticates a POS agent (email or username + password).
+        Agent must have an active StaffAssignment with role `pos` and an event.
+        If multiple events, pass `event_id`.
+      operationId: posLogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PosLoginRequest'
+      responses:
+        '200':
+          description: Login success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PosLoginResponse'
+        '400':
+          description: Multiple assignments — event_id required
+        '401':
+          description: Invalid credentials or no POS assignment
+
+  /pos/tickets:
+    get:
+      tags: [01 POS Tickets]
+      summary: List POS tickets for assigned event
+      description: |
+        Returns active tickets for the logged-in agent's event,
+        plus POS addons and time_extensions.
+        Excludes tickets/addons with `hide_from_pos = true`.
+        If the agent has third-party shareholder(s), only those vendors' tickets are returned;
+        otherwise all offline tickets for the event are returned.
+        Respects assignment `ticket_type_ids` when set.
+        Waiver fields live on the login `event` object.
+      operationId: listPosTickets
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Ticket list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PosTicketsResponse'
+        '401':
+          description: Invalid or expired POS session
+
+  /pos/agents:
+    get:
+      tags: [02 POS Agents]
+      summary: List POS agents for event
+      operationId: listPosAgents
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - name: event_slug
+          in: query
+          schema:
+            type: string
+          example: sample-event
+        - name: event_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Either event_slug or event_id is required
+      responses:
+        '200':
+          description: Agents list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PosAgentListResponse'
+        '400':
+          description: Missing event_slug/event_id or event not found
+
+  /pos/promocodes/offers:
+    get:
+      tags: [02 POS Promocodes]
+      summary: List promocode offers for POS agent
+      description: |
+        Returns offers visible for the agent's event and ticket/shareholder scope.
+      operationId: listPosPromocodeOffers
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: lang
+          in: query
+          schema:
+            type: string
+            enum: [en, ar]
+            default: en
+      responses:
+        '200':
+          description: Offer list
+        '401':
+          description: Invalid or expired POS session
+
+  /pos/promocodes/apply:
+    post:
+      tags: [02 POS Promocodes]
+      summary: Validate a promocode for the POS cart
+      description: |
+        Same validation and response shape as customer `POST /promocodes/apply`.
+        With POS JWT, `event_slug` is optional (uses the agent's assigned event).
+        Without POS JWT, pass `event_slug` explicitly (admin/test checkout).
+      operationId: applyPosPromocode
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - name: lang
+          in: query
+          schema:
+            type: string
+            enum: [en, ar]
+            default: en
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, selected_tickets]
+              properties:
+                code:
+                  type: string
+                  example: FAMILY10
+                event_slug:
+                  type: string
+                  description: Optional when logged in with POS JWT
+                  example: sample-family-experience
+                selected_tickets:
+                  type: array
+                  items:
+                    type: object
+                    required: [ticket_id, quantity, unit_price]
+                    properties:
+                      ticket_id:
+                        type: string
+                        description: Catalog external key from GET /pos/tickets
+                      variant_id:
+                        type: string
+                        nullable: true
+                      quantity:
+                        type: integer
+                        minimum: 1
+                      unit_price:
+                        type: number
+            example:
+              code: FAMILY10
+              selected_tickets:
+                - ticket_id: adult-pass
+                  variant_id: null
+                  quantity: 2
+                  unit_price: 100
+      responses:
+        '200':
+          description: Promo validation result (`valid` true/false)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  code:
+                    type: string
+                  discount_type:
+                    type: string
+                    enum: [ticket_specific, total_order]
+                  summary_label:
+                    type: string
+                  total_discount_text:
+                    type: string
+                  total_discount_amount:
+                    type: number
+                  currency:
+                    type: string
+                  applied_breakdown:
+                    type: array
+                    items:
+                      type: object
+                  message:
+                    type: string
+        '400':
+          description: Missing event_slug without POS JWT, or agent/event mismatch
+
+  /pos/book-ticket:
+    post:
+      tags: [03 POS Booking]
+      summary: POS book ticket (offline)
+      description: |
+        Requires `agent_id` and `offline_payment.mode`.
+        Stamps `metadata.source = pos` and agent ids on order/items.
+      operationId: posBookTicket
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - name: lang
+          in: query
+          schema:
+            type: string
+            default: en
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PosBookTicketRequest'
+            example:
+              agent_id: 00000000-0000-0000-0000-000000000001
+              offline_payment:
+                mode: cash
+              event_slug: sample-event
+              schedule:
+                date: '2026-08-15'
+                time: '10:00 AM'
+              tickets:
+                - ticket_id: ticket-uuid
+                  quantity: 2
+                  unit_price: 100
+              customer:
+                name: Walk-in Guest
+                email: guest@example.com
+                phone: '+97455550000'
+              totals:
+                subtotal: 200
+                discount_amount: 0
+                total: 200
+                currency: QAR
+              idempotency_key: pos-book-001
+      responses:
+        '200':
+          description: Booking created (paid or advance pending)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PosBookTicketResponse'
+        '400':
+          description: Missing agent / invalid assignment / validation
+
+  /pos/advance-payments/pending:
+    post:
+      tags: [04 POS Advance Payments]
+      summary: Search pending advance payments
+      operationId: posAdvancePending
+      security:
+        - {}
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdvancePendingRequest'
+      responses:
+        '200':
+          description: Matching pending advances
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdvancePendingResponse'
+
+  /pos/advance-payments/complete:
+    post:
+      tags: [04 POS Advance Payments]
+      summary: Complete advance (collect remaining)
+      operationId: posAdvanceComplete
+      security:
+        - {}
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdvanceCompleteRequest'
+      responses:
+        '200':
+          description: Advance completed / order paid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdvanceCompleteResponse'
+        '400':
+          description: common_order required or invalid state
+
+  /pos/customers/options:
+    get:
+      tags: [05 POS Customers]
+      summary: Customer form options
+      description: Age groups and nationalities for POS customer forms.
+      operationId: posCustomerOptions
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Options payload
+        '401':
+          description: Invalid or expired POS session
+
+  /pos/customers/search:
+    get:
+      tags: [05 POS Customers]
+      summary: Search customers
+      description: Search by name, email, or phone (min 2 characters).
+      operationId: posCustomerSearch
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 120
+          example: '55550000'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 8
+            default: 8
+      responses:
+        '200':
+          description: Matching customers
+        '400':
+          description: Query too short
+        '401':
+          description: Invalid or expired POS session
+
+  /pos/customers/resolve:
+    post:
+      tags: [05 POS Customers]
+      summary: Find or create customer
+      operationId: posCustomerResolve
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, phone]
+              properties:
+                name:
+                  type: string
+                  example: Walk-in Guest
+                phone:
+                  type: string
+                  example: '+97455550000'
+                email:
+                  type: string
+                  format: email
+                age_group:
+                  type: string
+                  example: '25-34'
+                nationality:
+                  type: string
+                  example: Qatari
+      responses:
+        '200':
+          description: Resolved customer
+        '400':
+          description: Validation error
+        '401':
+          description: Invalid or expired POS session
+
+  /pos/online-tickets/search:
+    get:
+      tags: [06 POS Online Tickets]
+      summary: Search online tickets
+      description: Search by phone, ticket code, common_order, or UUID (min 3 chars).
+      operationId: posOnlineTicketSearch
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 160
+      responses:
+        '200':
+          description: Matching tickets for assigned event
+        '400':
+          description: Query too short
+        '401':
+          description: Invalid or expired POS session
+
+  /pos/online-tickets/{id}/use:
+    post:
+      tags: [06 POS Online Tickets]
+      summary: Mark online ticket used
+      description: Optional RFID codes; syncs attendance.
+      operationId: posOnlineTicketUse
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rfids:
+                  type: array
+                  maxItems: 50
+                  items:
+                    type: string
+                  example: [RFID001]
+      responses:
+        '200':
+          description: Ticket marked used
+        '400':
+          description: Invalid request
+        '404':
+          description: Ticket not found
+        '409':
+          description: Already used / conflict
+
+  /pos/shift:
+    get:
+      tags: [07 POS Daily Closing (Shift)]
+      summary: Get shift / sales report
+      description: |
+        Returns expected cash/card/ticket/addon totals and closing status for the agent+event date.
+        This is the POS agent sales report used before daily closing.
+      operationId: getPosShift
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+            example: '2026-08-13'
+          description: Defaults to today (Asia/Qatar)
+      responses:
+        '200':
+          description: Shift report
+        '400':
+          description: Invalid date
+        '401':
+          description: Invalid or expired POS session
+
+  /pos/shift/close:
+    post:
+      tags: [07 POS Daily Closing (Shift)]
+      summary: Close shift (create DailyClosing)
+      description: |
+        Declares cash/card received and creates a DailyClosing row for agent+event+date.
+        Further POS sales for that day are blocked after close.
+      operationId: closePosShift
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [date, declared_cash, declared_card]
+              properties:
+                date:
+                  type: string
+                  format: date
+                  example: '2026-08-13'
+                declared_cash:
+                  type: number
+                  minimum: 0
+                  example: 100
+                declared_card:
+                  type: number
+                  minimum: 0
+                  example: 50
+                note:
+                  type: string
+                  maxLength: 2000
+      responses:
+        '200':
+          description: Shift closed
+        '400':
+          description: Invalid date or amounts
+        '401':
+          description: Invalid or expired POS session
+        '409':
+          description: Shift already closed

@@ -1,0 +1,13 @@
+.git
+node_modules
+dist
+coverage
+uploads
+tmp
+*.log
+*.md
+.env
+.env.*
+!.env.example
+dump.rdb
+*.zip

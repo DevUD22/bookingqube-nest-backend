@@ -1,0 +1,3113 @@
+openapi: 3.0.3
+info:
+  title: BookingQube Customer Checkout, POS & Cafe API
+  description: |
+    Customer storefront, Event POS, and Cafe menus/POS APIs for BookingQube V2.
+
+    **Checkout journey**
+    1. Browse catalog → event detail → schedule → tickets → availability
+    2. Auth (register / login / social) — optional until account features
+    3. Apply promocode
+    4. Create hold or book-ticket (pending)
+    5. Confirm payment after gateway success
+    6. Customer bookings / ticket HTML
+
+    **Auth:** `Authorization: Bearer <JWT>` from login/social_login.
+    Customer JWT only (no customer refresh/logout endpoints).
+  version: 1.0.0
+  contact:
+    name: BookingQube
+
+servers:
+  - url: http://localhost:3002/api/v1
+    description: Local (current .env — PORT=3002, API_VERSION=v1)
+  - url: http://localhost:4000/api/v2
+    description: Example defaults from .env.example
+  - url: '{baseUrl}'
+    description: Custom
+    variables:
+      baseUrl:
+        default: http://localhost:3002/api/v1
+
+tags:
+  - name: 01 Auth
+    description: Public login, registration, social login, password reset OTP
+  - name: 02 Browse Catalog
+    description: Homepage, event listing, detail, schedule, tickets, availability
+  - name: 03 Registration Events
+    description: Registration-only event form (alternate checkout)
+  - name: 04 Promocodes
+    description: Validate and apply promo before booking
+  - name: 05 Checkout Hold Book Pay
+    description: Hold inventory, book ticket, confirm payment
+  - name: 06 Customer Account
+    description: Profile, favorites, bookings (Bearer required)
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Customer JWT from POST /login or POST /social_login
+
+  parameters:
+    LangQuery:
+      name: lang
+      in: query
+      required: false
+      schema:
+        type: string
+        default: en
+        enum: [en, ar]
+      example: en
+    EventSlugPath:
+      name: slug
+      in: path
+      required: true
+      schema:
+        type: string
+      example: sample-event
+
+  schemas:
+    # ── Auth ──────────────────────────────────────────────
+    RegisterRequest:
+      type: object
+      required: [name, email, password, password_confirmation, accept]
+      properties:
+        name:
+          type: string
+          maxLength: 255
+          example: Jane Doe
+        email:
+          type: string
+          format: email
+          example: jane@example.com
+        password:
+          type: string
+          minLength: 8
+          example: Secret123!
+        password_confirmation:
+          type: string
+          example: Secret123!
+        accept:
+          description: Terms acceptance (bool, string, or 0/1)
+          oneOf:
+            - type: boolean
+            - type: string
+            - type: integer
+          example: true
+        phone:
+          type: string
+          example: '+97455550000'
+        gender:
+          type: string
+          example: female
+
+    RegisterResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Registration successful.
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: jane@example.com
+        password:
+          type: string
+          example: Secret123!
+        device_name:
+          type: string
+          example: web
+
+    AuthUserData:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        avatar:
+          nullable: true
+        phone:
+          nullable: true
+
+    LoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/AuthUserData'
+        image_url_prefix:
+          type: string
+        token:
+          type: string
+          description: Bearer JWT — use in Authorization header
+
+    SocialLoginRequest:
+      type: object
+      required: [provider, access_token, other_data]
+      properties:
+        provider:
+          type: string
+          enum: [google, apple]
+        access_token:
+          type: string
+          description: Provider ID token / access token
+        other_data:
+          type: string
+          description: JSON string, e.g. {"name":"Jane","email":"jane@example.com"}
+          example: '{"name":"Jane Doe","email":"jane@example.com"}'
+
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+
+    VerifyOtpRequest:
+      type: object
+      required: [email, otp]
+      properties:
+        email:
+          type: string
+          format: email
+        otp:
+          type: string
+          pattern: '^\d{6}$'
+          example: '123456'
+
+    ResetPasswordRequest:
+      type: object
+      required: [email, otp, password, password_confirmation]
+      properties:
+        email:
+          type: string
+          format: email
+        otp:
+          type: string
+          pattern: '^\d{6}$'
+        password:
+          type: string
+          minLength: 8
+        password_confirmation:
+          type: string
+
+    # ── Promo ─────────────────────────────────────────────
+    PromoApplyRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          example: SAVE10
+        event_slug:
+          type: string
+          example: sample-event
+        selected_tickets:
+          type: array
+          items:
+            type: object
+            required: [ticket_id, quantity, unit_price]
+            properties:
+              ticket_id:
+                type: string
+              variant_id:
+                type: string
+                nullable: true
+              quantity:
+                type: integer
+                minimum: 1
+              unit_price:
+                type: number
+
+    PromoApplySuccess:
+      type: object
+      properties:
+        valid:
+          type: boolean
+          example: true
+        code:
+          type: string
+        discount_type:
+          type: string
+          enum: [ticket_specific, total_order]
+        summary_label:
+          type: string
+        total_discount_text:
+          type: string
+        total_discount_amount:
+          type: number
+        currency:
+          type: string
+        applied_breakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              target_type:
+                type: string
+              target_id:
+                type: string
+              discount_applied_per_unit:
+                type: number
+              total_item_discount:
+                type: number
+
+    PromoApplyFailure:
+      type: object
+      properties:
+        valid:
+          type: boolean
+          example: false
+        code:
+          type: string
+        message:
+          type: string
+
+    # ── Checkout ──────────────────────────────────────────
+    BookTicketLineItem:
+      type: object
+      required: [ticket_id, quantity]
+      properties:
+        ticket_id:
+          type: string
+        variant_id:
+          type: string
+          nullable: true
+        quantity:
+          type: integer
+          minimum: 1
+        unit_price:
+          type: number
+        customization_options:
+          type: array
+          items:
+            type: object
+            required: [id, qty]
+            properties:
+              id:
+                type: string
+              qty:
+                type: integer
+              unit_price:
+                type: number
+              price:
+                type: number
+              name:
+                type: string
+
+    BookAddonLineItem:
+      type: object
+      required: [addon_id, quantity]
+      properties:
+        addon_id:
+          type: string
+        variant_id:
+          type: string
+          nullable: true
+        quantity:
+          type: integer
+        unit_price:
+          type: number
+
+    BookTicketRequest:
+      type: object
+      properties:
+        event_slug:
+          type: string
+          example: sample-event
+        schedule:
+          type: object
+          properties:
+            date:
+              type: string
+              example: '2026-08-15'
+            time:
+              type: string
+              example: '10:00 AM'
+        tickets:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookTicketLineItem'
+        addons:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookAddonLineItem'
+        promo_code:
+          type: object
+          nullable: true
+          properties:
+            code:
+              type: string
+            ticket_id:
+              type: string
+              nullable: true
+            variant_id:
+              type: string
+              nullable: true
+        payment_method:
+          type: integer
+        totals:
+          type: object
+          properties:
+            subtotal:
+              type: number
+            discount_amount:
+              type: number
+            total:
+              type: number
+            currency:
+              type: string
+              example: QAR
+        waiver:
+          type: object
+          properties:
+            accepted:
+              type: boolean
+            signed_by:
+              type: string
+              nullable: true
+            accepted_at:
+              type: string
+              nullable: true
+        customer:
+          type: object
+          properties:
+            user_id:
+              oneOf:
+                - type: string
+                - type: number
+              nullable: true
+            name:
+              type: string
+              nullable: true
+            email:
+              type: string
+              nullable: true
+            phone:
+              type: string
+              nullable: true
+        metadata:
+          type: object
+          properties:
+            source:
+              type: string
+              example: web
+            locale:
+              type: string
+              example: en
+        success_url:
+          type: string
+        failed_url:
+          type: string
+        base_domain:
+          type: string
+        idempotency_key:
+          type: string
+          description: Client-generated key; returned as temp_order_id
+        paymentDetailPayload:
+          type: object
+          properties:
+            provider:
+              type: string
+            status:
+              type: string
+              description: Use pending for unpaid hold path
+              example: pending
+            amount:
+              type: number
+            currency:
+              type: string
+            providerResponse:
+              type: object
+              properties:
+                invoiceId:
+                  type: string
+                paymentId:
+                  type: string
+                sessionId:
+                  type: string
+
+    BookTicketSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Booking created successfully.
+        data:
+          type: object
+          properties:
+            redirect_required:
+              type: boolean
+            payment_flow:
+              type: string
+              enum: [local_pending, embedded, pos_offline]
+            payment_method:
+              nullable: true
+            common_order:
+              type: string
+            order_no:
+              type: string
+            order_numbers:
+              type: array
+              items:
+                type: string
+            ticket_orders:
+              type: array
+              items:
+                type: object
+                properties:
+                  order_number:
+                    type: string
+                  ticket_title:
+                    type: string
+                  ticket_id:
+                    type: string
+            total:
+              type: number
+            currency:
+              type: string
+            temp_order_id:
+              type: string
+            hold_id:
+              type: string
+            success_url:
+              nullable: true
+            failed_url:
+              nullable: true
+            status:
+              type: string
+
+    ConfirmPaymentRequest:
+      type: object
+      properties:
+        common_order:
+          type: string
+          description: Preferred order reference
+        idempotency_key:
+          type: string
+          description: Alternate lookup if common_order omitted
+        provider:
+          type: string
+          example: myfatoorah
+        amount:
+          type: number
+        currency:
+          type: string
+          example: QAR
+        providerResponse:
+          type: object
+          properties:
+            invoiceId:
+              type: string
+            paymentId:
+              type: string
+            sessionId:
+              type: string
+
+    ConfirmPaymentResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            common_order:
+              type: string
+            status:
+              type: string
+              example: paid
+
+    HoldReleaseResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            hold_id:
+              type: string
+
+    AvailabilityResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            event_slug:
+              type: string
+            sessions:
+              type: array
+              items:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                  date:
+                    type: string
+                  time:
+                    type: string
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        inventory_item_id:
+                          type: string
+                        available:
+                          type: integer
+                        unlimited:
+                          type: boolean
+
+    # ── Registration form ─────────────────────────────────
+    RegistrationSubmitRequest:
+      type: object
+      properties:
+        event_id:
+          oneOf:
+            - type: string
+            - type: integer
+        slug:
+          type: string
+        fields:
+          type: object
+          additionalProperties: true
+          description: Map of field id/key → value
+          example:
+            name: Jane Doe
+            email: jane@example.com
+
+    # ── Customer ──────────────────────────────────────────
+    UpdateProfileRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        address:
+          type: string
+
+    UpdatePasswordRequest:
+      type: object
+      properties:
+        current:
+          type: string
+        password:
+          type: string
+        password_confirmation:
+          type: string
+
+    AddFavoriteRequest:
+      type: object
+      properties:
+        event_id:
+          type: string
+        eventId:
+          type: string
+        slug:
+          type: string
+
+    SuccessDataEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          additionalProperties: true
+
+    EventPaymentMethod:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          description: |
+            V2 payment method id — 7 NAPS/QPay, 8 Visa/MasterCard (MPGS),
+            10 Apple Pay, 11 Google Pay, 12 MyFatoorah Card
+          example: 12
+        name:
+          type: string
+          example: MyFatoorah Card
+
+    # ── POS / Cafe (merged) ───────────────────────────
+
+    PosAgentListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            event_id:
+              type: string
+              format: uuid
+            event_slug:
+              type: string
+            organization_id:
+              type: string
+              format: uuid
+            agents:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                  email:
+                    type: string
+                  username:
+                    type: string
+                  assignment_id:
+                    type: string
+                    format: uuid
+
+    OfflinePayment:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [cash, card, split, advance, comp]
+        split_cash_amount:
+          type: number
+        split_card_amount:
+          type: number
+        advance_amount:
+          type: number
+        advance_type:
+          type: string
+          enum: [cash, card]
+        agent_id:
+          type: string
+          format: uuid
+        booked_by_agent_id:
+          type: string
+          format: uuid
+
+    PosBookTicketRequest:
+      type: object
+      required: [agent_id, offline_payment]
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+          description: Required — active POS agent user id
+        offline_payment:
+          $ref: '#/components/schemas/OfflinePayment'
+        event_slug:
+          type: string
+          example: sample-event
+        schedule:
+          type: object
+          properties:
+            date:
+              type: string
+              example: '2026-08-15'
+            time:
+              type: string
+              example: '10:00 AM'
+        tickets:
+          type: array
+          items:
+            type: object
+            required: [ticket_id, quantity]
+            properties:
+              ticket_id:
+                type: string
+              variant_id:
+                type: string
+                nullable: true
+              quantity:
+                type: integer
+                minimum: 1
+              unit_price:
+                type: number
+              customization_options:
+                type: array
+                items:
+                  type: object
+                  required: [id, qty]
+                  properties:
+                    id:
+                      type: string
+                    qty:
+                      type: integer
+                    unit_price:
+                      type: number
+                    name:
+                      type: string
+        addons:
+          type: array
+          items:
+            type: object
+            required: [addon_id, quantity]
+            properties:
+              addon_id:
+                type: string
+              variant_id:
+                type: string
+                nullable: true
+              quantity:
+                type: integer
+              unit_price:
+                type: number
+        promo_code:
+          type: object
+          nullable: true
+          properties:
+            code:
+              type: string
+            ticket_id:
+              type: string
+              nullable: true
+            variant_id:
+              type: string
+              nullable: true
+        totals:
+          type: object
+          properties:
+            subtotal:
+              type: number
+            discount_amount:
+              type: number
+            total:
+              type: number
+            currency:
+              type: string
+              example: QAR
+        waiver:
+          type: object
+          properties:
+            accepted:
+              type: boolean
+            signed_by:
+              type: string
+              nullable: true
+            accepted_at:
+              type: string
+              nullable: true
+        customer:
+          type: object
+          properties:
+            user_id:
+              nullable: true
+            name:
+              type: string
+              nullable: true
+            email:
+              type: string
+              nullable: true
+            phone:
+              type: string
+              nullable: true
+        metadata:
+          type: object
+          properties:
+            source:
+              type: string
+              example: pos
+            locale:
+              type: string
+              example: en
+        idempotency_key:
+          type: string
+        success_url:
+          type: string
+        failed_url:
+          type: string
+        base_domain:
+          type: string
+        paymentDetailPayload:
+          type: object
+          additionalProperties: true
+
+    PosBookTicketResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            redirect_required:
+              type: boolean
+              example: false
+            payment_flow:
+              type: string
+              enum: [pos_offline, pos_advance]
+            offline_payment_mode:
+              type: string
+            is_advance_payment:
+              type: boolean
+            common_order:
+              type: string
+            order_no:
+              type: string
+            order_numbers:
+              type: array
+              items:
+                type: string
+            ticket_orders:
+              type: array
+              items:
+                type: object
+            total:
+              type: number
+            advance_amount:
+              type: number
+            remaining_amount:
+              type: number
+            currency:
+              type: string
+            temp_order_id:
+              type: string
+            hold_id:
+              type: string
+              nullable: true
+            status:
+              type: string
+              example: paid
+
+    AdvancePendingRequest:
+      type: object
+      properties:
+        search:
+          type: string
+          description: Required non-empty by service (order/customer search)
+          example: BQ-
+        event_id:
+          type: string
+          format: uuid
+
+    AdvancePendingResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              common_order:
+                type: string
+              customer_name:
+                type: string
+              customer_email:
+                type: string
+              customer_phone:
+                type: string
+              total_amount:
+                type: number
+              advance_amount:
+                type: number
+              remaining_amount:
+                type: number
+              advance_type:
+                type: string
+              currency:
+                type: string
+              event_id:
+                type: string
+              status:
+                type: string
+                example: PENDING
+              created_at:
+                type: string
+                format: date-time
+
+    AdvanceCompleteRequest:
+      type: object
+      required: [common_order]
+      properties:
+        common_order:
+          type: string
+        remaining_payment:
+          type: string
+          enum: [cash, card]
+          default: cash
+        agent_id:
+          type: string
+          format: uuid
+
+    AdvanceCompleteResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+          example: Advance booking completed.
+        data:
+          type: object
+          properties:
+            is_advance_payment:
+              type: boolean
+            common_order:
+              type: string
+            status:
+              type: string
+              example: paid
+            total:
+              type: number
+            currency:
+              type: string
+            cash_amount:
+              type: number
+            card_amount:
+              type: number
+
+
+    AdminLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+
+    AdminLoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          additionalProperties: true
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        token:
+          type: string
+          description: Some responses may nest token under data
+
+    SuccessEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          additionalProperties: true
+        message:
+          type: string
+
+    CreateAdminCafeRequest:
+      type: object
+      required: [organization_id, name, table_count]
+      properties:
+        organization_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 160
+        details:
+          type: string
+          nullable: true
+        table_count:
+          type: integer
+          minimum: 1
+          maximum: 500
+        manager_user_id:
+          type: string
+          format: uuid
+          nullable: true
+
+    UpdateAdminCafeRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        details:
+          type: string
+          nullable: true
+        table_count:
+          type: integer
+          minimum: 1
+          maximum: 500
+        manager_user_id:
+          type: string
+          format: uuid
+          nullable: true
+
+    CafeStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [draft, published, archived]
+
+    UpsertMenuCategoryRequest:
+      type: object
+      required: [title_en]
+      properties:
+        title_en:
+          type: string
+        title_ar:
+          type: string
+          nullable: true
+        sort_order:
+          type: integer
+        status:
+          type: string
+          enum: [active, hidden, archived]
+        image_media_id:
+          type: string
+          format: uuid
+          nullable: true
+        thumbnail_data_url:
+          type: string
+        thumbnail_file_name:
+          type: string
+
+    UpsertMenuSubcategoryRequest:
+      $ref: '#/components/schemas/UpsertMenuCategoryRequest'
+
+    CafeMenuItemVariant:
+      type: object
+      required: [title_en, price]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title_en:
+          type: string
+        title_ar:
+          type: string
+          nullable: true
+        price:
+          type: number
+          minimum: 0
+        sort_order:
+          type: integer
+        status:
+          type: string
+          enum: [active, hidden, archived]
+
+    UpsertMenuItemRequest:
+      type: object
+      required: [title_en, price]
+      properties:
+        title_en:
+          type: string
+        title_ar:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        price:
+          type: number
+          minimum: 0
+        currency:
+          type: string
+          example: QAR
+        image_media_id:
+          type: string
+          format: uuid
+          nullable: true
+        thumbnail_data_url:
+          type: string
+        thumbnail_file_name:
+          type: string
+        is_kot:
+          type: boolean
+        sort_order:
+          type: integer
+        status:
+          type: string
+          enum: [active, hidden, archived]
+        variants:
+          type: array
+          maxItems: 40
+          items:
+            $ref: '#/components/schemas/CafeMenuItemVariant'
+          description: When set (including empty), replaces all variants. Omit to leave unchanged on update.
+
+    CreateCafePosAgentRequest:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          description: Attach existing user — omit when creating new
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        username:
+          type: string
+          pattern: '^[a-zA-Z0-9._-]+$'
+          minLength: 3
+          maxLength: 60
+
+    CafeAgentStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [active, suspended]
+
+    AssignCafeEventRequest:
+      type: object
+      required: [event_id]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+
+    CafePosContextResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            cafe:
+              type: object
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+                table_count:
+                  type: integer
+                status:
+                  type: string
+                organization_id:
+                  type: string
+            event:
+              type: object
+              nullable: true
+              properties:
+                id:
+                  type: string
+                slug:
+                  type: string
+                title:
+                  type: string
+            agent_id:
+              type: string
+
+    CafePosMenuResponse:
+      type: object
+      description: >
+        Each category exposes `items` for products with no named subcategory,
+        and `subcategories` only for real subcategory groups.
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            cafe_id:
+              type: string
+            categories:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+
+    CafePosTablesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            cafe_id:
+              type: string
+            event_id:
+              type: string
+            table_count:
+              type: integer
+            tables:
+              type: array
+              items:
+                type: object
+                properties:
+                  table:
+                    type: integer
+                  status:
+                    type: string
+                    enum: [FREE, OCCUPIED]
+                  orders:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+
+    BookCafeTableRequest:
+      type: object
+      required: [table_number, payment_type, items]
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        table_number:
+          type: integer
+          minimum: 1
+          maximum: 500
+        payment_type:
+          type: string
+          enum: [prepaid, postpaid]
+        promo_code:
+          type: string
+          maxLength: 40
+          description: Optional order-level promocode (order_total or per-item from admin config)
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [menu_item_id, quantity]
+            properties:
+              menu_item_id:
+                type: string
+                format: uuid
+              quantity:
+                type: integer
+                minimum: 1
+                maximum: 99
+        customer_name:
+          type: string
+          maxLength: 160
+        customer_email:
+          type: string
+          format: email
+
+    ClearCafeTableRequest:
+      type: object
+      required: [agent_id, table_number, payment_mode]
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        table_number:
+          type: integer
+          minimum: 1
+          maximum: 500
+        payment_mode:
+          type: string
+          enum: [cash, card, split]
+        split_cash_amount:
+          type: number
+          minimum: 0
+        split_card_amount:
+          type: number
+          minimum: 0
+        customer_name:
+          type: string
+        customer_email:
+          type: string
+          format: email
+
+    ClearCafeTableResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+          example: Table settled successfully.
+        data:
+          type: object
+          properties:
+            common_order:
+              type: string
+            order_id:
+              type: string
+            table_number:
+              type: integer
+            total_amount:
+              type: number
+            currency:
+              type: string
+
+paths:
+  # ═══════════════════════════════════════════════════════
+  # 01 Auth
+  # ═══════════════════════════════════════════════════════
+  /register:
+    post:
+      tags: [01 Auth]
+      summary: Register customer
+      description: Creates account. Does not auto-login — call /login after.
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '200':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          description: Validation error
+
+  /login:
+    post:
+      tags: [01 Auth]
+      summary: Login
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login success with JWT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+
+  /social_login:
+    post:
+      tags: [01 Auth]
+      summary: Social login (Google / Apple)
+      operationId: socialLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SocialLoginRequest'
+      responses:
+        '200':
+          description: Same shape as login
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+
+  /password/forgot:
+    post:
+      tags: [01 Auth]
+      summary: Request password-reset OTP
+      operationId: forgotPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '200':
+          description: Always generic success message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /password/verify-otp:
+    post:
+      tags: [01 Auth]
+      summary: Verify password-reset OTP
+      operationId: verifyOtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyOtpRequest'
+      responses:
+        '200':
+          description: OTP verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /password/reset:
+    post:
+      tags: [01 Auth]
+      summary: Reset password with OTP
+      operationId: resetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password reset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  # ═══════════════════════════════════════════════════════
+  # 02 Browse Catalog
+  # ═══════════════════════════════════════════════════════
+  /homepage/hero-and-category-section:
+    get:
+      tags: [02 Browse Catalog]
+      summary: Homepage hero + categories
+      operationId: homepageHero
+      parameters:
+        - $ref: '#/components/parameters/LangQuery'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessDataEnvelope'
+
+  /homepage/sections:
+    get:
+      tags: [02 Browse Catalog]
+      summary: Homepage sections
+      operationId: homepageSections
+      parameters:
+        - $ref: '#/components/parameters/LangQuery'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessDataEnvelope'
+
+  /homepage/venues-section:
+    get:
+      tags: [02 Browse Catalog]
+      summary: Homepage venues section
+      operationId: homepageVenues
+      parameters:
+        - $ref: '#/components/parameters/LangQuery'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessDataEnvelope'
+
+  /homepage/feeds:
+    get:
+      tags: [02 Browse Catalog]
+      summary: Homepage feeds
+      operationId: homepageFeeds
+      parameters:
+        - $ref: '#/components/parameters/LangQuery'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessDataEnvelope'
+
+  /homepage/quick-book-section:
+    get:
+      tags: [02 Browse Catalog]
+      summary: Homepage quick-book section
+      operationId: homepageQuickBook
+      parameters:
+        - $ref: '#/components/parameters/LangQuery'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessDataEnvelope'
+
+  /homepage/offers-detail/{slug}:
+    get:
+      tags: [02 Browse Catalog]
+      summary: Offer detail by slug
+      operationId: homepageOfferDetail
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/LangQuery'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessDataEnvelope'
+
+  /footer:
+    get:
+      tags: [02 Browse Catalog]
+      summary: Footer content
+      operationId: footer
+      parameters:
+        - $ref: '#/components/parameters/LangQuery'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessDataEnvelope'
+
+  /event-listing:
+    get:
+      tags: [02 Browse Catalog]
+      summary: Event listing (all + featured)
+      operationId: eventListing
+      parameters:
+        - $ref: '#/components/parameters/LangQuery'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessDataEnvelope'
+
+  /event-listing-by-slug/{slug}:
+    get:
+      tags: [02 Browse Catalog]
+      summary: Event listing section by slug
+      operationId: eventListingBySlug
+      parameters:
+        - $ref: '#/components/parameters/EventSlugPath'
+        - $ref: '#/components/parameters/LangQuery'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessDataEnvelope'
+
+  /events/search:
+    get:
+      tags: [02 Browse Catalog]
+      summary: Search events
+      operationId: eventsSearch
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          example: family
+        - $ref: '#/components/parameters/LangQuery'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            example: 10
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                  items:
+                    type: array
+                    items:
+                      type: object
+                  total:
+                    type: integer
+
+  /events/{slug}/detail:
+    get:
+      tags: [02 Browse Catalog]
+      summary: Event detail
+      description: |
+        Includes `payment_methods` — customer V2 method IDs enabled in admin Payment settings
+        (`myfatoorah` → 10/11/12, `qpay` → 7, `mastercard` → 8). Free/zero checkout uses method `0`
+        and does not appear in this list.
+      operationId: eventDetail
+      parameters:
+        - $ref: '#/components/parameters/EventSlugPath'
+        - $ref: '#/components/parameters/LangQuery'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    additionalProperties: true
+                    properties:
+                      payment_methods:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/EventPaymentMethod'
+        '404':
+          description: Not found / not published
+
+  /events/{slug}/schedule:
+    get:
+      tags: [02 Browse Catalog]
+      summary: Event schedule sessions
+      operationId: eventSchedule
+      parameters:
+        - $ref: '#/components/parameters/EventSlugPath'
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: string
+            example: '2026-08'
+          description: YYYY-MM
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            example: 1
+        - $ref: '#/components/parameters/LangQuery'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessDataEnvelope'
+
+  /events/{slug}/tickets:
+    get:
+      tags: [02 Browse Catalog]
+      summary: Tickets + addons for a session
+      operationId: eventTickets
+      parameters:
+        - $ref: '#/components/parameters/EventSlugPath'
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            example: '2026-08-15'
+        - name: time
+          in: query
+          required: true
+          schema:
+            type: string
+            example: '10:00 AM'
+        - $ref: '#/components/parameters/LangQuery'
+      responses:
+        '200':
+          description: Tickets, addons, selected_context, legal_requirements
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessDataEnvelope'
+        '400':
+          description: date and time required
+
+  /events/{slug}/availability:
+    get:
+      tags: [02 Browse Catalog]
+      summary: Inventory availability
+      operationId: eventAvailability
+      parameters:
+        - $ref: '#/components/parameters/EventSlugPath'
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: time
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityResponse'
+
+  /venue-detail/{slug}:
+    get:
+      tags: [02 Browse Catalog]
+      summary: Venue detail
+      operationId: venueDetail
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/LangQuery'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessDataEnvelope'
+
+  /page/{slug}:
+    get:
+      tags: [02 Browse Catalog]
+      summary: CMS page (not in system)
+      description: |
+        Static CMS pages (FAQ, terms, privacy, etc.).
+        **Not migrated** to Nest yet — always returns HTTP 501 with `message: not in system`.
+      operationId: cmsPage
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          example: faqs
+        - $ref: '#/components/parameters/LangQuery'
+      responses:
+        '501':
+          description: Not in system
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: not in system
+                  data:
+                    nullable: true
+                    example: null
+
+  # ═══════════════════════════════════════════════════════
+  # 03 Registration Events
+  # ═══════════════════════════════════════════════════════
+  /registration-form/{slugOrId}:
+    get:
+      tags: [03 Registration Events]
+      summary: Get registration form
+      operationId: getRegistrationForm
+      parameters:
+        - name: slugOrId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/LangQuery'
+      responses:
+        '200':
+          description: Form fields + event meta
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessDataEnvelope'
+
+  /registration-form/submit:
+    post:
+      tags: [03 Registration Events]
+      summary: Submit registration form
+      operationId: submitRegistrationForm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationSubmitRequest'
+      responses:
+        '200':
+          description: Success or failure envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: object
+                  errors:
+                    type: object
+
+  # ═══════════════════════════════════════════════════════
+  # 04 Promocodes
+  # ═══════════════════════════════════════════════════════
+  /promocodes/apply:
+    post:
+      tags: [04 Promocodes]
+      summary: Apply / validate promocode
+      operationId: applyPromocode
+      parameters:
+        - $ref: '#/components/parameters/LangQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromoApplyRequest'
+      responses:
+        '200':
+          description: valid true or false
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PromoApplySuccess'
+                  - $ref: '#/components/schemas/PromoApplyFailure'
+
+  # ═══════════════════════════════════════════════════════
+  # 05 Checkout Hold Book Pay
+  # ═══════════════════════════════════════════════════════
+  /holds:
+    post:
+      tags: [05 Checkout Hold Book Pay]
+      summary: Create inventory hold (pending order)
+      description: |
+        Same body as book-ticket. Forces unpaid path (`paymentDetailPayload.status = pending`).
+        Optional Bearer (customer or admin JWT).
+      operationId: createHold
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/LangQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookTicketRequest'
+            example:
+              event_slug: sample-event
+              schedule:
+                date: '2026-08-15'
+                time: '10:00 AM'
+              tickets:
+                - ticket_id: 'ticket-uuid'
+                  quantity: 2
+                  unit_price: 100
+              customer:
+                name: Jane Doe
+                email: jane@example.com
+                phone: '+97455550000'
+              totals:
+                subtotal: 200
+                discount_amount: 0
+                total: 200
+                currency: QAR
+              metadata:
+                source: web
+                locale: en
+              idempotency_key: client-hold-001
+      responses:
+        '200':
+          description: Hold / pending booking created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookTicketSuccessResponse'
+
+  /holds/{id}/release:
+    post:
+      tags: [05 Checkout Hold Book Pay]
+      summary: Release hold
+      operationId: releaseHold
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Hold id from create hold response
+      responses:
+        '200':
+          description: Hold released
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HoldReleaseResponse'
+
+  /book-ticket:
+    post:
+      tags: [05 Checkout Hold Book Pay]
+      summary: Create booking (hold or paid)
+      description: |
+        Creates order. Unpaid → hold/pending. Paid payload or offline tender → paid path.
+        Optional Bearer (customer or admin JWT).
+        No dedicated public payment-initiate API; after gateway success call /payments/confirm.
+      operationId: bookTicket
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/LangQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookTicketRequest'
+      responses:
+        '200':
+          description: Booking created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookTicketSuccessResponse'
+
+  /payments/confirm:
+    post:
+      tags: [05 Checkout Hold Book Pay]
+      summary: Confirm payment after gateway success
+      description: Marks pending/expired order as paid.
+      operationId: confirmPayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmPaymentRequest'
+            example:
+              common_order: BQ-20260815-001
+              provider: myfatoorah
+              amount: 200
+              currency: QAR
+              providerResponse:
+                invoiceId: '12345'
+                paymentId: 'pay_abc'
+      responses:
+        '200':
+          description: Payment confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfirmPaymentResponse'
+
+  # ═══════════════════════════════════════════════════════
+  # 06 Customer Account
+  # ═══════════════════════════════════════════════════════
+  /customer/profile:
+    get:
+      tags: [06 Customer Account]
+      summary: Get profile
+      operationId: getCustomerProfile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessDataEnvelope'
+        '401':
+          description: Unauthorized
+    post:
+      tags: [06 Customer Account]
+      summary: Update profile
+      operationId: updateCustomerProfile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: object
+
+  /customer/profile/password:
+    put:
+      tags: [06 Customer Account]
+      summary: Change password
+      operationId: updateCustomerPassword
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePasswordRequest'
+      responses:
+        '200':
+          description: Password updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /customer/favorites:
+    get:
+      tags: [06 Customer Account]
+      summary: List favorites
+      operationId: getFavorites
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/LangQuery'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessDataEnvelope'
+    post:
+      tags: [06 Customer Account]
+      summary: Add favorite
+      operationId: addFavorite
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/LangQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddFavoriteRequest'
+      responses:
+        '200':
+          description: Added
+
+  /customer/favorites/{eventId}:
+    delete:
+      tags: [06 Customer Account]
+      summary: Remove favorite
+      operationId: removeFavorite
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Removed
+
+  /customer/bookings:
+    get:
+      tags: [06 Customer Account]
+      summary: List my bookings
+      operationId: getCustomerBookings
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: from_date
+          in: query
+          schema:
+            type: string
+            example: '2026-01-01'
+        - name: to_date
+          in: query
+          schema:
+            type: string
+            example: '2026-12-31'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 6
+        - $ref: '#/components/parameters/LangQuery'
+      responses:
+        '200':
+          description: Bookings + pagination
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessDataEnvelope'
+
+  /bookings/{order}/tickets:
+    get:
+      tags: [06 Customer Account]
+      summary: Render booking tickets HTML
+      operationId: getBookingTicketsHtml
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: order
+          in: path
+          required: true
+          schema:
+            type: string
+          description: common_order / order number
+        - name: format
+          in: query
+          schema:
+            type: string
+            default: card
+      responses:
+        '200':
+          description: HTML ticket page
+          content:
+            text/html:
+              schema:
+                type: string
+
+  # ═══════════════════════════════════════════════════════
+  # 07 POS Checkout
+  # ═══════════════════════════════════════════════════════
+/pos/agents:
+    get:
+      tags: [07 POS Checkout]
+      summary: List POS agents for event
+      operationId: listPosAgents
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - name: event_slug
+          in: query
+          schema:
+            type: string
+          example: sample-event
+        - name: event_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Either event_slug or event_id is required
+      responses:
+        '200':
+          description: Agents list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PosAgentListResponse'
+        '400':
+          description: Missing event_slug/event_id or event not found
+
+  /pos/book-ticket:
+    post:
+      tags: [07 POS Checkout]
+      summary: POS book ticket (offline)
+      description: |
+        Requires `agent_id` and `offline_payment.mode`.
+        Stamps `metadata.source = pos` and agent ids on order/items.
+      operationId: posBookTicket
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - name: lang
+          in: query
+          schema:
+            type: string
+            default: en
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PosBookTicketRequest'
+            example:
+              agent_id: 00000000-0000-0000-0000-000000000001
+              offline_payment:
+                mode: cash
+              event_slug: sample-event
+              schedule:
+                date: '2026-08-15'
+                time: '10:00 AM'
+              tickets:
+                - ticket_id: ticket-uuid
+                  quantity: 2
+                  unit_price: 100
+              customer:
+                name: Walk-in Guest
+                email: guest@example.com
+                phone: '+97455550000'
+              totals:
+                subtotal: 200
+                discount_amount: 0
+                total: 200
+                currency: QAR
+              idempotency_key: pos-book-001
+      responses:
+        '200':
+          description: Booking created (paid or advance pending)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PosBookTicketResponse'
+        '400':
+          description: Missing agent / invalid assignment / validation
+
+  /pos/advance-payments/pending:
+    post:
+      tags: [07 POS Checkout]
+      summary: Search pending advance payments
+      operationId: posAdvancePending
+      security:
+        - {}
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdvancePendingRequest'
+      responses:
+        '200':
+          description: Matching pending advances
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdvancePendingResponse'
+
+  /pos/advance-payments/complete:
+    post:
+      tags: [07 POS Checkout]
+      summary: Complete advance (collect remaining)
+      operationId: posAdvanceComplete
+      security:
+        - {}
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdvanceCompleteRequest'
+      responses:
+        '200':
+          description: Advance completed / order paid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdvanceCompleteResponse'
+        '400':
+          description: common_order required or invalid state
+
+  # ═══════════════════════════════════════════════════════
+  # 08–09 Cafe
+  # ═══════════════════════════════════════════════════════
+# ── 01 Admin Auth ──────────────────────────────────────
+  /admin/auth/login:
+    post:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Admin login
+      operationId: adminLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminLoginRequest'
+      responses:
+        '200':
+          description: Tokens issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminLoginResponse'
+
+  # ── 02 Cafe Menus (Admin) ──────────────────────────────
+  /admin/cafes:
+    get:
+      tags: [08 Cafe Menus (Admin)]
+      summary: List cafes
+      operationId: listCafes
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: organization_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, review, published, archived]
+        - name: q
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cafe list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+    post:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Create cafe
+      operationId: createCafe
+      security:
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAdminCafeRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '200':
+          description: Created (if controller returns 200)
+
+  /admin/cafes/{id}:
+    get:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Get cafe detail
+      operationId: getCafe
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Cafe with nested menu/agents
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+    put:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Update cafe
+      operationId: updateCafe
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAdminCafeRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /admin/cafes/{id}/status:
+    post:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Set cafe status (publish)
+      description: Requires cafe.publish
+      operationId: setCafeStatus
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CafeStatusRequest'
+      responses:
+        '200':
+          description: Status updated
+
+  /admin/cafes/{id}/menu/categories:
+    get:
+      tags: [08 Cafe Menus (Admin)]
+      summary: List menu categories
+      operationId: listCafeCategories
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Categories tree
+    post:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Create menu category
+      operationId: createCafeCategory
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertMenuCategoryRequest'
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /admin/cafes/{id}/menu/categories/{categoryId}:
+    put:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Update menu category
+      operationId: updateCafeCategory
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertMenuCategoryRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Delete menu category
+      operationId: deleteCafeCategory
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deleted
+
+  /admin/cafes/{id}/menu/categories/{categoryId}/subcategories:
+    post:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Create subcategory
+      operationId: createCafeSubcategory
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertMenuSubcategoryRequest'
+      responses:
+        '200':
+          description: Created
+
+  /admin/cafes/{id}/menu/categories/{categoryId}/subcategories/{subcategoryId}:
+    put:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Update subcategory
+      operationId: updateCafeSubcategory
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: subcategoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertMenuSubcategoryRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Delete subcategory
+      operationId: deleteCafeSubcategory
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: subcategoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deleted
+
+  /admin/cafes/{id}/menu/categories/{categoryId}/items:
+    post:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Create item under category (ungrouped)
+      operationId: createCafeItemUnderCategory
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertMenuItemRequest'
+      responses:
+        '200':
+          description: Created
+
+  /admin/cafes/{id}/menu/subcategories/{subcategoryId}/items:
+    post:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Create item under subcategory
+      operationId: createCafeItem
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: subcategoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertMenuItemRequest'
+      responses:
+        '200':
+          description: Created
+
+  /admin/cafes/{id}/menu/subcategories/{subcategoryId}/items/{itemId}:
+    put:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Update menu item
+      operationId: updateCafeItem
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: subcategoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertMenuItemRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Delete menu item
+      operationId: deleteCafeItem
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: subcategoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deleted
+
+  /admin/cafes/{id}/agents:
+    get:
+      tags: [08 Cafe Menus (Admin)]
+      summary: List cafe POS agents
+      operationId: listCafeAgents
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Agents
+    post:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Add cafe POS agent
+      operationId: addCafeAgent
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCafePosAgentRequest'
+      responses:
+        '200':
+          description: Agent added
+
+  /admin/cafes/{id}/agents/{agentId}/status:
+    post:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Update agent status
+      operationId: updateCafeAgentStatus
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: agentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CafeAgentStatusRequest'
+      responses:
+        '200':
+          description: Updated
+
+  /admin/cafes/{id}/agents/{agentId}:
+    delete:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Remove cafe POS agent
+      operationId: removeCafeAgent
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: agentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Removed
+
+  /admin/cafes/{id}/assign-event:
+    post:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Assign cafe to event
+      operationId: assignCafeEvent
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignCafeEventRequest'
+      responses:
+        '200':
+          description: Assigned
+
+  /admin/cafes/{id}/unassign-event:
+    post:
+      tags: [08 Cafe Menus (Admin)]
+      summary: Unassign cafe from event
+      operationId: unassignCafeEvent
+      security:
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Unassigned
+
+  # ── 03 Cafe POS Booking ────────────────────────────────
+  /pos/cafe/context:
+    get:
+      tags: [09 Cafe POS Booking]
+      summary: Cafe POS context
+      operationId: cafePosContext
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - name: agent_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Cafe + event + agent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CafePosContextResponse'
+
+  /pos/cafe/menu:
+    get:
+      tags: [09 Cafe POS Booking]
+      summary: Cafe POS menu
+      operationId: cafePosMenu
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - name: agent_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Categories with direct items (no subcategory) plus named subcategories → items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CafePosMenuResponse'
+
+  /pos/cafe/tables:
+    get:
+      tags: [09 Cafe POS Booking]
+      summary: List tables + open orders
+      operationId: cafePosTables
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - name: agent_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: FREE / OCCUPIED tables
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CafePosTablesResponse'
+
+  /pos/cafe/tables/book:
+    post:
+      tags: [09 Cafe POS Booking]
+      summary: Book table / add lines
+      description: Creates or merges open CafeOrder on the table (this is the cart).
+      operationId: cafePosBookTable
+      security:
+        - {}
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookCafeTableRequest'
+            example:
+              agent_id: 00000000-0000-0000-0000-000000000001
+              table_number: 3
+              payment_type: postpaid
+              lines:
+                - menu_item_id: 00000000-0000-0000-0000-000000000010
+                  quantity: 2
+              customer_name: Table Guest
+      responses:
+        '200':
+          description: Open order returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /pos/cafe/tables/clear:
+    post:
+      tags: [09 Cafe POS Booking]
+      summary: Settle / clear table
+      description: Closes open order and creates Order + OrderItems (source pos_cafe).
+      operationId: cafePosClearTable
+      security:
+        - {}
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClearCafeTableRequest'
+            example:
+              agent_id: 00000000-0000-0000-0000-000000000001
+              table_number: 3
+              payment_mode: cash
+      responses:
+        '200':
+          description: Table settled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClearCafeTableResponse'
+

@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "addons" ADD COLUMN IF NOT EXISTS "for_cafe_only" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "addons" ADD COLUMN IF NOT EXISTS "thumbnail_url" TEXT;
+ALTER TABLE "addons" ADD COLUMN IF NOT EXISTS "hide_from_online" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "addons" ADD COLUMN IF NOT EXISTS "hide_from_pos" BOOLEAN NOT NULL DEFAULT false;
