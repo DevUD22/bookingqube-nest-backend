@@ -14,8 +14,15 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
-COPY --from=deps /app/node_modules ./node_modules
+# Use build-stage node_modules so @prisma/client includes generated enums.
+COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
+# Seed imports ../src/common/crypto/password
+COPY --from=build /app/src ./src
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
+RUN npm prune --omit=dev \
+  && npm install prisma tsx \
+  && chmod +x ./docker-entrypoint.sh
 EXPOSE 4000
-CMD ["node", "dist/src/main.js"]
+CMD ["./docker-entrypoint.sh"]
