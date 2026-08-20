@@ -21,8 +21,8 @@ COPY --from=build /app/prisma ./prisma
 # Seed imports ../src/common/crypto/password
 COPY --from=build /app/src ./src
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
+# prisma + tsx stay after prune (listed in dependencies) for migrate/seed at boot
 RUN npm prune --omit=dev \
-  && npm install prisma tsx \
   && chmod +x ./docker-entrypoint.sh
 EXPOSE 4000
 CMD ["./docker-entrypoint.sh"]
