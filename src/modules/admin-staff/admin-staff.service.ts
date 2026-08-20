@@ -826,8 +826,8 @@ export class AdminStaffService {
             : 'username is required for POS agents.',
         );
       }
-      // Vendor requirement is enforced in validateScope when the event has
-      // vendor-linked products (same rule as createAssignment / admin UI).
+      // Vendors are optional for POS: no vendors = all event tickets;
+      // selected vendors = that vendor scope (further narrowed by ticket_type_ids).
       if (roleName === 'pos' && !thirdPartyVendorIds.length && thirdPartyVendorId) {
         thirdPartyVendorIds = [thirdPartyVendorId];
       }
@@ -1689,11 +1689,6 @@ export class AdminStaffService {
         id: true,
         organizationId: true,
         bookingMode: true,
-        ticketTypes: {
-          where: { thirdPartyVendorId: { not: null } },
-          select: { id: true },
-          take: 1,
-        },
       },
     });
     if (!event) throw new NotFoundException('Event not found.');
@@ -1704,14 +1699,6 @@ export class AdminStaffService {
       throw new BadRequestException(
         'POS agents are not available for registration-only events.',
       );
-    }
-    if (
-      event.bookingMode !== 'registration' &&
-      input.roleName === 'pos' &&
-      event.ticketTypes.length > 0 &&
-      !input.thirdPartyVendorIds.length
-    ) {
-      throw new BadRequestException('Select at least one third-party vendor for POS.');
     }
 
     const shareIdsToCheck = [
